@@ -76,3 +76,27 @@ Permite registrar un nuevo usuario en el sistema.
   "email": "david@email.com",
   "password": "123456"
 }
+
+## Configuración del entorno
+
+1. Clona el repositorio
+2. Crea un archivo `.env` en la raíz del backend basado en `.env.example`
+3. Completa tus credenciales de PostgreSQL
+
+Ejemplo:
+
+PORT=3000
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=nutriedu
+DB_USER=tu_usuario
+DB_PASSWORD=tu_password
+JWT_SECRET=tu_clave_jwt
+
+4. Instala dependencias:
+
+npm install
+
+5. Ejecuta el servidor:
+
+node server.js
