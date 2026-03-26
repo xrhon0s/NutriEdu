@@ -89,9 +89,14 @@ const loginUser = async (req, res) => {
   );
 
   res.json({
-   message: "Login exitoso",
-   token,
-  });
+  message: "Login exitoso",
+  token,
+  user: {
+    id: user.id,
+    nombre: user.nombre,
+    email: user.email
+  }
+});
   
 
  } catch (error) {
@@ -103,32 +108,61 @@ const loginUser = async (req, res) => {
 //======================= Funcion de addRestrictions ==============================
 
 const addRestrictions = async (req, res) => {
- try {
+  try {
+    const { userId, restricciones } = req.body;
 
-  const { userId, restricciones } = req.body;
+    const existing = await pool.query(
+      "SELECT * FROM usuario_restricciones WHERE usuario_id = $1",
+      [userId]
+    );
 
-  for (const restriccion of restricciones) {
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        message: "Este usuario ya tiene restricciones registradas"
+      });
+    }
 
-   await pool.query(
-    "INSERT INTO usuario_restricciones (usuario_id, restriccion_id) VALUES ($1, $2)",
-    [userId, restriccion]
-   );
+    for (const restriccion of restricciones) {
+      await pool.query(
+        "INSERT INTO usuario_restricciones (usuario_id, restriccion_id) VALUES ($1, $2)",
+        [userId, restriccion]
+      );
+    }
 
+    res.json({
+      message: "Restricciones guardadas correctamente"
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: "Error guardando restricciones"
+    });
   }
+};
+//======================= Funcion de getUserRestrictions ==============================
+const getUserRestrictions = async (req, res) => {
+  try {
+    const { userId } = req.params;
 
-  res.json({
-   message: "Restricciones guardadas correctamente"
-  });
+    const result = await pool.query(
+      `SELECT ur.restriccion_id, r.nombre
+       FROM usuario_restricciones ur
+       JOIN restricciones r ON ur.restriccion_id = r.id
+       WHERE ur.usuario_id = $1`,
+      [userId]
+    );
 
- } catch (error) {
-
-  console.error(error);
-
-  res.status(500).json({
-   error: "Error guardando restricciones"
-  });
-
- }
+    res.json({
+      hasRestrictions: result.rows.length > 0,
+      restrictions: result.rows,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: "Error obteniendo restricciones",
+    });
+  }
 };
 
-module.exports = { registerUser, loginUser, addRestrictions };
+module.exports = { registerUser, loginUser, addRestrictions, getUserRestrictions };
