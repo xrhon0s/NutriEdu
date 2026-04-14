@@ -111,16 +111,16 @@ const addRestrictions = async (req, res) => {
   try {
     const { userId, restricciones } = req.body;
 
-    const existing = await pool.query(
-      "SELECT * FROM usuario_restricciones WHERE usuario_id = $1",
-      [userId]
-    );
-
-    if (existing.rows.length > 0) {
+    if (!userId || !Array.isArray(restricciones)) {
       return res.status(400).json({
-        message: "Este usuario ya tiene restricciones registradas"
+        message: "Datos de restricciones inválidos"
       });
     }
+
+    await pool.query(
+      "DELETE FROM usuario_restricciones WHERE usuario_id = $1",
+      [userId]
+    );
 
     for (const restriccion of restricciones) {
       await pool.query(
@@ -132,7 +132,6 @@ const addRestrictions = async (req, res) => {
     res.json({
       message: "Restricciones guardadas correctamente"
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({
