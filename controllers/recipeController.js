@@ -89,4 +89,29 @@ const getRecommendedRecipes = async (req, res) => {
 
 };
 
-module.exports = { getSafeRecipes, getRecommendedRecipes };
+
+const getRecipeById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      "SELECT * FROM recetas WHERE id = $1",
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: "Receta no encontrada"
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: "Error obteniendo la receta"
+    });
+  }
+};
+
+module.exports = { getSafeRecipes, getRecommendedRecipes, getRecipeById };
