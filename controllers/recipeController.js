@@ -114,4 +114,39 @@ const getRecipeById = async (req, res) => {
   }
 };
 
-module.exports = { getSafeRecipes, getRecommendedRecipes, getRecipeById };
+const getRecipeIngredients = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+
+    const result = await pool.query(
+      `
+      SELECT 
+        i.id,
+        i.nombre,
+        CASE 
+          WHEN ir.restriccion_id IS NOT NULL THEN false
+          ELSE true
+        END AS compatible
+      FROM receta_ingredientes ri
+      JOIN ingredientes i ON ri.ingrediente_id = i.id
+      LEFT JOIN ingrediente_restricciones ir 
+        ON i.id = ir.ingrediente_id
+      LEFT JOIN usuario_restricciones ur 
+        ON ir.restriccion_id = ur.restriccion_id
+        AND ur.usuario_id = $2
+      WHERE ri.receta_id = $1
+      `,
+      [id, userId]
+    );
+
+    res.json(result.rows);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: "Error obteniendo ingredientes"
+    });
+  }
+};
+
+module.exports = { getSafeRecipes, getRecommendedRecipes, getRecipeById, getRecipeIngredients };
