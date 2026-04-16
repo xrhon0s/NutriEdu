@@ -3,10 +3,12 @@ const router = express.Router();
 
 const {
   saveWeeklyPlan,
-  getWeeklyPlan
+  getWeeklyPlan,
+  getShoppingList
 } = require("../controllers/plannerController");
 
 router.post("/", saveWeeklyPlan);
 router.get("/:userId", getWeeklyPlan);
+router.get("/:userId/shopping-list", getShoppingList);
 
 module.exports = router;

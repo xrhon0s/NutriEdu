@@ -69,4 +69,30 @@ const getWeeklyPlan = async (req, res) => {
   }
 };
 
-module.exports = { saveWeeklyPlan, getWeeklyPlan };
+const getShoppingList = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const result = await pool.query(
+      `
+      SELECT DISTINCT i.id, i.nombre
+      FROM plan_semanal ps
+      JOIN receta_ingredientes ri ON ps.receta_id = ri.receta_id
+      JOIN ingredientes i ON ri.ingrediente_id = i.id
+      WHERE ps.usuario_id = $1
+      ORDER BY i.nombre ASC
+      `,
+      [userId]
+    );
+
+    res.json(result.rows);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: "Error generando lista de compras"
+    });
+  }
+};
+
+module.exports = { saveWeeklyPlan, getWeeklyPlan, getShoppingList };
