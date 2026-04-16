@@ -7,6 +7,6 @@ const { getSafeRecipes, getRecommendedRecipes, getRecipeById, getRecipeIngredien
 router.get("/safe/:userId", getSafeRecipes);
 router.get("/recommended/:userId", getRecommendedRecipes);
 router.get("/:id", getRecipeById);
-router.get("/:id/ingredients/:userId", getRecipeIngredients);
+router.get("/:id/ingredients", getRecipeIngredients);
 
 module.exports = router;
