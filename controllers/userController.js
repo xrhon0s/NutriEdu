@@ -164,4 +164,20 @@ const getUserRestrictions = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, loginUser, addRestrictions, getUserRestrictions };
+//======================= Funcion de getAllRestrictions ==============================
+const getAllRestrictions = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id AS restriccion_id, nombre
+       FROM restricciones
+       ORDER BY id`
+    );
+
+    res.json({ restrictions: result.rows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error obteniendo todas las restricciones" });
+  }
+};
+
+module.exports = { registerUser, loginUser, addRestrictions, getUserRestrictions, getAllRestrictions };

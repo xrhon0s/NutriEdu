@@ -7,5 +7,6 @@ router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.post("/restrictions", addRestrictions);
 router.get("/restrictions/:userId", getUserRestrictions);
+router.get("/restrictions", getAllRestrictions);
 
 module.exports = router;
