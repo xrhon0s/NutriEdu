@@ -5,6 +5,4 @@ DB_NAME=nutriedu
 DB_USER=tu_usuario_postgres
 DB_PASSWORD=tu_password_postgres
 JWT_SECRET=tu_clave_secreta_jwt
-FRONTEND_URL=http://localhost:5173
-RESEND_API_KEY=re_tu_api_key
-RESEND_FROM_EMAIL="NutriEdu <onboarding@resend.dev>"
+
