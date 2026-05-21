@@ -10,13 +10,14 @@ const {
   getUserRestrictions,
   getAllRestrictions
 } = require("../controllers/userController");
+const verifyToken = require("../middleware/verifyToken");
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
-router.post("/restrictions", addRestrictions);
-router.get("/restrictions/:userId", getUserRestrictions);
-router.get("/restrictions", getAllRestrictions);
+router.post("/restrictions", verifyToken, addRestrictions);
+router.get("/restrictions/:userId", verifyToken, getUserRestrictions);
+router.get("/restrictions", verifyToken, getAllRestrictions);
 
 module.exports = router;

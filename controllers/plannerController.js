@@ -2,9 +2,10 @@ const pool = require("../database/db");
 
 const saveWeeklyPlan = async (req, res) => {
   try {
-    const { userId, plan } = req.body;
+    const { plan } = req.body;
+    const userId = req.user.id;
 
-    if (!userId || !Array.isArray(plan)) {
+    if (!Array.isArray(plan)) {
       return res.status(400).json({
         message: "Datos de planificación inválidos"
       });
@@ -38,7 +39,7 @@ const saveWeeklyPlan = async (req, res) => {
 
 const getWeeklyPlan = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
 
     const result = await pool.query(
       `
@@ -71,7 +72,7 @@ const getWeeklyPlan = async (req, res) => {
 
 const getShoppingList = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
 
     const result = await pool.query(
       `

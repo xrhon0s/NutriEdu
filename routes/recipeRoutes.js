@@ -8,7 +8,9 @@ const {
   checkRecipeSafety,
   searchRecipes
 } = require("../controllers/recipeController");
+const verifyToken = require("../middleware/verifyToken");
 
+router.use(verifyToken);
 router.get("/safe/:userId", getSafeRecipes);
 router.get("/recommended/:userId", getRecommendedRecipes);
 router.get("/search/:userId", searchRecipes);

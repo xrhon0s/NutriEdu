@@ -3,14 +3,12 @@ const pool = require("../database/db");
 
 const verifyAdmin = async (req, res, next) => {
   try {
-    // Tomamos el id del usuario desde los headers enviados por el frontend
-    const userId = req.headers["x-user-id"];
+    const userId = req.user?.id;
 
     if (!userId) {
-      return res.status(401).json({ message: "No se recibió usuario" });
+      return res.status(401).json({ message: "Usuario no autenticado" });
     }
 
-    // Consultamos la DB para obtener el rol del usuario
     const result = await pool.query(
       "SELECT rol FROM usuarios WHERE id=$1",
       [userId]
@@ -26,7 +24,6 @@ const verifyAdmin = async (req, res, next) => {
       return res.status(403).json({ message: "No autorizado" });
     }
 
-    // Usuario admin → continua
     next();
   } catch (err) {
     console.error(err);

@@ -102,7 +102,9 @@ En desarrollo puedes usar `NutriEdu <onboarding@resend.dev>`. En produccion debe
 
 El login genera un JWT con `jsonwebtoken`. El frontend guarda el token en `localStorage` y lo envia en el header `Authorization`.
 
-Actualmente algunas verificaciones administrativas usan `x-user-id` desde el frontend. Una mejora pendiente importante es validar todos los endpoints privados con middleware JWT real.
+Los endpoints privados usan `verifyToken` para validar el JWT. En rutas de usuario, recetas y planificador, el backend usa `req.user.id` como fuente de identidad en lugar de confiar en IDs enviados desde el cliente.
+
+Las rutas administrativas combinan `verifyToken` y `verifyAdmin`: primero se valida el JWT y luego se consulta el rol del usuario en base de datos.
 
 ## Correos con Resend
 

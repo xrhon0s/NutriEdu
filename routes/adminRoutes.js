@@ -1,15 +1,18 @@
 const express = require("express");
 const router = express.Router();
 const { listRecipes, listIngredients, createRecipe, updateRecipe, deleteRecipe, createIngredient } = require("../controllers/adminController");
+const verifyToken = require("../middleware/verifyToken");
 const verifyAdmin = require("../middleware/verifyAdmin");
 
 // Middleware aplicado a todas las rutas de admin
-router.get("/recipes", verifyAdmin, listRecipes);
-router.get("/ingredients", verifyAdmin, listIngredients);
-router.post("/recipes", verifyAdmin, createRecipe);
-router.put("/recipes/:id", verifyAdmin, updateRecipe);
-router.delete("/recipes/:id", verifyAdmin, deleteRecipe);
-router.post("/ingredients", verifyAdmin, createIngredient);
+router.use(verifyToken, verifyAdmin);
+
+router.get("/recipes", listRecipes);
+router.get("/ingredients", listIngredients);
+router.post("/recipes", createRecipe);
+router.put("/recipes/:id", updateRecipe);
+router.delete("/recipes/:id", deleteRecipe);
+router.post("/ingredients", createIngredient);
 
 
 module.exports = router;

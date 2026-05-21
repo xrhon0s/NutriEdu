@@ -3,7 +3,7 @@ const pool = require("../database/db");
 // ================= Recetas Seguras =================
 const getSafeRecipes = async (req, res) => {
   try {
-    const userId = req.params.userId;
+    const userId = req.user.id;
 
     const result = await pool.query(
       `SELECT r.*
@@ -29,7 +29,7 @@ const getSafeRecipes = async (req, res) => {
 // ================= Recetas Recomendadas =================
 const getRecommendedRecipes = async (req, res) => {
   try {
-    const userId = req.params.userId;
+    const userId = req.user.id;
 
     const result = await pool.query(
       `SELECT r.*
@@ -93,7 +93,8 @@ const getRecipeIngredients = async (req, res) => {
 // ================= Verificar seguridad de la receta =================
 const checkRecipeSafety = async (req, res) => {
   try {
-    const { recipeId, userId } = req.params;
+    const { recipeId } = req.params;
+    const userId = req.user.id;
 
     // Ingredientes no seguros
     const unsafeRes = await pool.query(
@@ -137,8 +138,15 @@ const checkRecipeSafety = async (req, res) => {
 // ================= BUSCADOR GLOBAL DE RECETAS =================
 const searchRecipes = async (req, res) => {
   try {
-    const { userId } = req.params;
-    const { query = "", nivel_salud, tipo, calorias_min, calorias_max } = req.query;
+    const userId = req.user.id;
+    const {
+      query = "",
+      nivel_salud,
+      nivel_min,
+      nivel_max,
+      calorias_min,
+      calorias_max
+    } = req.query;
 
     let baseQuery = `
       SELECT r.*,
@@ -157,14 +165,27 @@ const searchRecipes = async (req, res) => {
     let params = [userId, `%${query}%`];
     let counter = 3;
 
-    if (nivel_salud) {
-      baseQuery += ` AND r.nivel_salud = $${counter++}`;
-      params.push(nivel_salud);
+    if (nivel_min) {
+      baseQuery += ` AND r.nivel_salud >= $${counter++}`;
+      params.push(nivel_min);
     }
 
-    if (tipo) {
-      baseQuery += ` AND r.tipo = $${counter++}`;
-      params.push(tipo);
+    if (nivel_max) {
+      baseQuery += ` AND r.nivel_salud <= $${counter++}`;
+      params.push(nivel_max);
+    }
+
+    if (!nivel_min && !nivel_max && nivel_salud) {
+      if (nivel_salud === "muy_saludable") {
+        baseQuery += " AND r.nivel_salud >= 5";
+      } else if (nivel_salud === "saludable") {
+        baseQuery += " AND r.nivel_salud >= 3 AND r.nivel_salud < 5";
+      } else if (nivel_salud === "moderada") {
+        baseQuery += " AND r.nivel_salud < 3";
+      } else {
+        baseQuery += ` AND r.nivel_salud = $${counter++}`;
+        params.push(nivel_salud);
+      }
     }
 
     if (calorias_min) {

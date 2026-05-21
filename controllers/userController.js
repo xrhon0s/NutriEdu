@@ -108,7 +108,7 @@ const loginUser = async (req, res) => {
   }
 
   const token = jwt.sign(
-   { id: user.id, email: user.email },
+   { id: user.id, email: user.email, rol: user.rol },
    process.env.JWT_SECRET,
    { expiresIn: "1h" }
   );
@@ -250,9 +250,10 @@ const resetPassword = async (req, res) => {
 
 const addRestrictions = async (req, res) => {
   try {
-    const { userId, restricciones } = req.body;
+    const { restricciones } = req.body;
+    const userId = req.user.id;
 
-    if (!userId || !Array.isArray(restricciones)) {
+    if (!Array.isArray(restricciones)) {
       return res.status(400).json({
         message: "Datos de restricciones inválidos"
       });
@@ -283,7 +284,7 @@ const addRestrictions = async (req, res) => {
 //======================= Funcion de getUserRestrictions ==============================
 const getUserRestrictions = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
 
     const result = await pool.query(
       `SELECT ur.restriccion_id, r.nombre
