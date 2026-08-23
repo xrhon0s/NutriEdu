@@ -4,6 +4,17 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:clinical-smoke": "node scripts/clinicalProfileSmokeTest.js",
+    "test:vision-contract": "node scripts/visionProviderContractTest.js",
+    "test:vision-usage": "node scripts/visionUsageContractTest.js",
+    "test:medical-document-schema": "node scripts/medicalDocumentSchemaContractTest.js",
+    "test:medical-document-profile": "node scripts/medicalDocumentProfileChangesContractTest.js",
+    "test:contracts": "npm run test:vision-contract && npm run test:vision-usage && npm run test:medical-document-schema && npm run test:medical-document-profile",
+    "cleanup:medical-reviews": "node scripts/cleanupExpiredMedicalReviews.js",
+    "audit:user-deletion": "node scripts/auditUserDeletionForeignKeys.js",
+    "migrate": "node scripts/runMigrations.js",
+    "migrate:baseline": "node scripts/runMigrations.js --baseline",
+    "migrate:status": "node scripts/runMigrations.js --status",
     "start": "node server.js",
     "dev": "node server.js"
   },
@@ -17,6 +28,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
     "pg": "^8.20.0",
     "resend": "^6.12.3"
   }

@@ -1,5 +1,6 @@
 .env
 .env.*
 !.env.example
+.env copy.example
 node_modules
 node_modules/

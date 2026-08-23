@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { sendPasswordResetEmail, sendWelcomeEmail } = require("../services/emailService");
+const { createInAppNotification } = require("../services/notificationService");
 
 const hashResetToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
@@ -67,6 +68,17 @@ const registerUser = async (req, res) => {
     name: result.rows[0].nombre
   }).catch((emailError) => {
     console.error("Error enviando correo de bienvenida:", emailError);
+  });
+
+  createInAppNotification(pool, {
+    userId: result.rows[0].id,
+    category: "security",
+    eventType: "welcome",
+    title: "Bienvenido a NutriEdu",
+    body: "Tu cuenta esta lista. Completa tu perfil para personalizar recetas y alertas.",
+    destination: "/profile"
+  }).catch((notificationError) => {
+    console.error("Error creando notificacion de bienvenida:", notificationError);
   });
 
   res.status(201).json({
@@ -322,6 +334,71 @@ const getAllRestrictions = async (req, res) => {
   }
 };
 
+const deleteAccount = async (req, res) => {
+  let client;
+
+  try {
+    const { password, confirmation } = req.body;
+    if (typeof password !== "string" || !password || confirmation !== "DELETE_MY_ACCOUNT") {
+      return res.status(400).json({
+        code: "ACCOUNT_DELETION_CONFIRMATION_REQUIRED",
+        message: "Confirma la eliminacion e ingresa tu contrasena"
+      });
+    }
+
+    client = await pool.connect();
+    await client.query("BEGIN");
+    const result = await client.query(
+      "SELECT id, password_hash, rol FROM usuarios WHERE id = $1 FOR UPDATE",
+      [req.user.id]
+    );
+    const user = result.rows[0];
+    if (!user) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ code: "ACCOUNT_NOT_FOUND", message: "La cuenta ya no existe" });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      await client.query("ROLLBACK");
+      return res.status(401).json({ code: "INVALID_ACCOUNT_PASSWORD", message: "La contrasena no es correcta" });
+    }
+
+    if (user.rol === "administrador") {
+      const adminCount = await client.query(
+        "SELECT COUNT(*)::integer AS total FROM usuarios WHERE rol = 'administrador'"
+      );
+      if (adminCount.rows[0].total <= 1) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          code: "LAST_ADMIN_ACCOUNT",
+          message: "Asigna otro administrador antes de eliminar esta cuenta"
+        });
+      }
+    }
+
+    await client.query("DELETE FROM usuarios WHERE id = $1", [user.id]);
+    await client.query("COMMIT");
+    return res.json({
+      status: "deleted",
+      accountDeleted: true,
+      deletedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
+    if (error.code === "23503") {
+      return res.status(409).json({
+        code: "ACCOUNT_DELETION_DEPENDENCY",
+        message: "La cuenta tiene datos relacionados que aun no permiten su eliminacion"
+      });
+    }
+    console.error("Error eliminando cuenta", error);
+    return res.status(500).json({ error: "Error eliminando la cuenta" });
+  } finally {
+    if (client) client.release();
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -329,5 +406,6 @@ module.exports = {
   resetPassword,
   addRestrictions,
   getUserRestrictions,
-  getAllRestrictions
+  getAllRestrictions,
+  deleteAccount
 };

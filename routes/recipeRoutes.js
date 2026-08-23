@@ -6,7 +6,8 @@ const {
   getRecipeById,
   getRecipeIngredients,
   checkRecipeSafety,
-  searchRecipes
+  searchRecipes,
+  evaluateRecipe
 } = require("../controllers/recipeController");
 const verifyToken = require("../middleware/verifyToken");
 
@@ -14,6 +15,7 @@ router.use(verifyToken);
 router.get("/safe/:userId", getSafeRecipes);
 router.get("/recommended/:userId", getRecommendedRecipes);
 router.get("/search/:userId", searchRecipes);
+router.get("/evaluate/:recipeId", evaluateRecipe);
 router.get("/:id", getRecipeById);
 router.get("/:id/ingredients", getRecipeIngredients);
 
