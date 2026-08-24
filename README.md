@@ -443,6 +443,11 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `DELETE /api/admin/recipes/:id`
 - `GET /api/admin/ingredients`
 - `POST /api/admin/ingredients`
+- `PUT /api/admin/ingredients/:id`
+- `DELETE /api/admin/ingredients/:id`
+- `GET /api/admin/overview`
+
+`overview` devuelve un resumen operativo agregado: usuarios, cobertura de perfiles, volumen de catalogos, notificaciones sin leer, consumo y presupuesto de vision, proveedor configurado y estado del ledger de migraciones. No devuelve filas de usuarios, documentos clinicos, tokens ni secretos.
 
 ### Documentos medicos
 
@@ -567,6 +572,14 @@ migrations/006_in_app_notifications.sql
 ```
 
 Esta migracion crea `notification_preferences` y `notifications`, ambas con eliminacion en cascada al borrar la cuenta. No configura push, tokens de dispositivo ni proveedores externos.
+
+Los horarios configurables se agregan con:
+
+```txt
+migrations/007_notification_schedules.sql
+```
+
+Esta version conserva horarios para desayuno, almuerzo, cena, preparacion del plan y compras. Persistir el horario no concede permisos ni programa por si solo una notificacion del sistema.
 
 ### Ejecucion de migraciones
 

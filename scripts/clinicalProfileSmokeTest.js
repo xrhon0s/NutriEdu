@@ -486,6 +486,11 @@ const run = async () => {
       ...defaultNotificationPreferences,
       quietStart: "22:00",
       quietEnd: "06:00",
+      mealReminderTimes: { breakfast: "07:30", lunch: "12:30", dinner: "19:30" },
+      weeklyPlanReminderDay: 0,
+      weeklyPlanReminderTime: "17:30",
+      shoppingReminderDay: 6,
+      shoppingReminderTime: "09:30",
       weeklyPlan: false
     })
   });
@@ -496,7 +501,13 @@ const run = async () => {
     title: "Suppressed",
     body: "This notification must not be inserted"
   });
-  if (suppressedNotification !== null || mutedNotificationPreferences.weeklyPlan !== false) {
+  if (
+    suppressedNotification !== null
+    || mutedNotificationPreferences.weeklyPlan !== false
+    || mutedNotificationPreferences.mealReminderTimes.breakfast !== "07:30"
+    || mutedNotificationPreferences.weeklyPlanReminderTime !== "17:30"
+    || mutedNotificationPreferences.shoppingReminderDay !== 6
+  ) {
     throw new Error("Notification category preference did not suppress delivery");
   }
 

@@ -44,7 +44,9 @@ const getNotificationPreferences = async (req, res) => {
     await ensurePreferences(req.user.id);
     const result = await pool.query(
       `SELECT timezone, quiet_start, quiet_end, meal_reminders, weekly_plan,
-        shopping, progress, security, updated_at
+        shopping, progress, security, meal_reminder_times,
+        weekly_plan_reminder_day, weekly_plan_reminder_time,
+        shopping_reminder_day, shopping_reminder_time, updated_at
        FROM notification_preferences WHERE user_id = $1`,
       [req.user.id]
     );
@@ -65,11 +67,35 @@ const updateNotificationPreferences = async (req, res) => {
     const next = {
       timezone: req.body.timezone ?? current.timezone,
       quiet_start: req.body.quietStart !== undefined ? normalizeTime(req.body.quietStart) : current.quiet_start,
-      quiet_end: req.body.quietEnd !== undefined ? normalizeTime(req.body.quietEnd) : current.quiet_end
+      quiet_end: req.body.quietEnd !== undefined ? normalizeTime(req.body.quietEnd) : current.quiet_end,
+      meal_reminder_times: req.body.mealReminderTimes !== undefined
+        ? normalizeMealReminderTimes(req.body.mealReminderTimes)
+        : current.meal_reminder_times,
+      weekly_plan_reminder_day: req.body.weeklyPlanReminderDay !== undefined
+        ? normalizeWeekday(req.body.weeklyPlanReminderDay)
+        : current.weekly_plan_reminder_day,
+      weekly_plan_reminder_time: req.body.weeklyPlanReminderTime !== undefined
+        ? normalizeRequiredTime(req.body.weeklyPlanReminderTime)
+        : current.weekly_plan_reminder_time,
+      shopping_reminder_day: req.body.shoppingReminderDay !== undefined
+        ? normalizeWeekday(req.body.shoppingReminderDay)
+        : current.shopping_reminder_day,
+      shopping_reminder_time: req.body.shoppingReminderTime !== undefined
+        ? normalizeRequiredTime(req.body.shoppingReminderTime)
+        : current.shopping_reminder_time
     };
 
-    if (!isValidTimeZone(next.timezone) || next.quiet_start === undefined || next.quiet_end === undefined) {
-      return res.status(400).json({ message: "Zona horaria u horas silenciosas invalidas" });
+    if (
+      !isValidTimeZone(next.timezone)
+      || next.quiet_start === undefined
+      || next.quiet_end === undefined
+      || next.meal_reminder_times === undefined
+      || next.weekly_plan_reminder_day === undefined
+      || next.weekly_plan_reminder_time === undefined
+      || next.shopping_reminder_day === undefined
+      || next.shopping_reminder_time === undefined
+    ) {
+      return res.status(400).json({ message: "Zona horaria, horas silenciosas o recordatorios invalidos" });
     }
 
     for (const field of BOOLEAN_FIELDS) {
@@ -85,13 +111,21 @@ const updateNotificationPreferences = async (req, res) => {
       `UPDATE notification_preferences SET
         timezone = $2, quiet_start = $3, quiet_end = $4,
         meal_reminders = $5, weekly_plan = $6, shopping = $7,
-        progress = $8, security = $9, updated_at = CURRENT_TIMESTAMP
+        progress = $8, security = $9, meal_reminder_times = $10::jsonb,
+        weekly_plan_reminder_day = $11, weekly_plan_reminder_time = $12,
+        shopping_reminder_day = $13, shopping_reminder_time = $14,
+        updated_at = CURRENT_TIMESTAMP
        WHERE user_id = $1
        RETURNING timezone, quiet_start, quiet_end, meal_reminders, weekly_plan,
-        shopping, progress, security, updated_at`,
+        shopping, progress, security, meal_reminder_times,
+        weekly_plan_reminder_day, weekly_plan_reminder_time,
+        shopping_reminder_day, shopping_reminder_time, updated_at`,
       [
         req.user.id, next.timezone, next.quiet_start, next.quiet_end,
-        next.meal_reminders, next.weekly_plan, next.shopping, next.progress, next.security
+        next.meal_reminders, next.weekly_plan, next.shopping, next.progress, next.security,
+        JSON.stringify(next.meal_reminder_times),
+        next.weekly_plan_reminder_day, next.weekly_plan_reminder_time,
+        next.shopping_reminder_day, next.shopping_reminder_time
       ]
     );
     return res.json(toPreferenceResponse(result.rows[0]));
@@ -147,6 +181,28 @@ const normalizeTime = (value) => {
   return value;
 };
 
+const normalizeRequiredTime = (value) => {
+  const normalized = normalizeTime(value);
+  return normalized === null ? undefined : normalized;
+};
+
+const normalizeWeekday = (value) => Number.isInteger(value) && value >= 0 && value <= 6
+  ? value
+  : undefined;
+
+const normalizeMealReminderTimes = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const keys = ["breakfast", "lunch", "dinner"];
+  if (Object.keys(value).some((key) => !keys.includes(key))) return undefined;
+  const result = {};
+  for (const key of keys) {
+    const normalized = normalizeRequiredTime(value[key]);
+    if (normalized === undefined) return undefined;
+    result[key] = normalized;
+  }
+  return result;
+};
+
 const isValidTimeZone = (value) => {
   if (typeof value !== "string" || value.length > 80) return false;
   try {
@@ -179,12 +235,17 @@ const toPreferenceResponse = (row) => ({
   shopping: row.shopping,
   progress: row.progress,
   security: row.security,
+  mealReminderTimes: row.meal_reminder_times,
+  weeklyPlanReminderDay: row.weekly_plan_reminder_day,
+  weeklyPlanReminderTime: String(row.weekly_plan_reminder_time).slice(0, 5),
+  shoppingReminderDay: row.shopping_reminder_day,
+  shoppingReminderTime: String(row.shopping_reminder_time).slice(0, 5),
   updatedAt: row.updated_at
 });
 
 const handleNotificationError = (res, error, message) => {
-  if (error.code === "42P01") {
-    return res.status(503).json({ message: "Ejecuta la migracion 006 de notificaciones" });
+  if (error.code === "42P01" || error.code === "42703") {
+    return res.status(503).json({ message: "Ejecuta las migraciones de notificaciones pendientes" });
   }
   console.error(error);
   return res.status(500).json({ error: message });
