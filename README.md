@@ -587,21 +587,25 @@ El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock
 
 ```bash
 npm run migrate:status
-npm run migrate -- 005 006
-npm run migrate:baseline -- 005 006
+npm run migrate -- 001 002 003 004 005 006 007
+npm run migrate:baseline -- 001 002 003 004 005 006 007
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.
 
-El ledger se introdujo cuando `001` a `004` ya se habian aplicado manualmente en el entorno local. Por eso el estado indica si una migracion esta **registrada**, no si sus objetos pueden inferirse del esquema. El baseline actual comienza en `005`; no ejecutes `001` a `004` solo para llenar el ledger.
+El ledger se introdujo despues de que algunas migraciones ya se habian aplicado manualmente. Por eso el estado indica si una migracion esta **registrada**, no si sus objetos existen en el esquema. No vuelvas a ejecutar migraciones solo para llenar el ledger.
 
-Si `005` y `006` fueron ejecutadas previamente desde Supabase SQL Editor, usa `migrate:baseline`. Este modo no vuelve a ejecutar las migraciones: primero comprueba las llaves foraneas con cascada, las tablas, columnas e indices esperados, y solo despues registra sus checksums. Si falta cualquier objeto, se detiene sin crear un registro falso.
+Si alguna version fue ejecutada previamente desde Supabase SQL Editor, usa `migrate:baseline` e indica solamente esas versiones. Este modo no ejecuta los archivos SQL: cada version tiene un verificador explicito para sus tablas, columnas, indices, catalogos o restricciones esenciales, y solo despues registra su checksum. Si falta cualquier objeto, se detiene sin crear un registro falso.
 
 Para mantener separadas las credenciales locales y de produccion, guarda temporalmente `DATABASE_URL` y `DB_SSL=true` en el archivo ignorado `.env.production.local` y ejecuta:
 
 ```bash
-MIGRATION_ENV_FILE=.env.production.local npm run migrate:baseline -- 005 006
+MIGRATION_ENV_FILE=.env.production.local npm run migrate:status
+MIGRATION_ENV_FILE=.env.production.local npm run migrate:baseline -- 001 002 003 004
+MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007
 ```
+
+El ejemplo anterior supone que `001-004` ya existen y `005-007` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
 
 ## Verificacion rapida
 

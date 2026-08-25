@@ -35,6 +35,105 @@ const databaseTarget = () => {
 
 const checksum = (sql) => crypto.createHash("sha256").update(sql).digest("hex");
 
+const assertRelations = async (client, migration, relationNames) => {
+  const result = await client.query(`
+    SELECT requested.name, to_regclass('public.' || requested.name) AS relation
+    FROM unnest($1::text[]) AS requested(name)
+  `, [relationNames]);
+  const missing = result.rows.filter((row) => !row.relation).map((row) => row.name);
+  if (missing.length) {
+    throw new Error(`Migration ${migration} verification failed: missing relations ${missing.join(", ")}`);
+  }
+};
+
+const assertColumns = async (client, migration, expectedByTable) => {
+  const tableNames = Object.keys(expectedByTable);
+  const result = await client.query(`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = ANY($1::text[])
+  `, [tableNames]);
+  const present = new Set(result.rows.map((row) => `${row.table_name}.${row.column_name}`));
+  const missing = tableNames.flatMap((tableName) =>
+    expectedByTable[tableName]
+      .map((columnName) => `${tableName}.${columnName}`)
+      .filter((column) => !present.has(column))
+  );
+  if (missing.length) {
+    throw new Error(`Migration ${migration} verification failed: missing columns ${missing.join(", ")}`);
+  }
+};
+
+const assertMigration001 = async (client) => {
+  await assertRelations(client, "001", [
+    "perfiles_usuario",
+    "objetivos_nutricionales",
+    "usuario_objetivos",
+    "condiciones_clinicas",
+    "usuario_condiciones",
+    "reglas_nutricionales",
+    "usuario_metas_nutricionales",
+    "idx_reglas_nutricionales_scope",
+    "idx_reglas_nutricionales_nutrient",
+    "idx_reglas_nutricionales_unique_seed"
+  ]);
+  await assertColumns(client, "001", {
+    recetas: ["protein_g", "carbs_g", "fat_g", "saturated_fat_g", "sugar_g", "fiber_g", "sodium_mg"],
+    perfiles_usuario: ["usuario_id", "fecha_nacimiento", "nivel_actividad", "habitos_alimentarios", "preferencias_alimentarias"],
+    objetivos_nutricionales: ["id", "code", "nombre", "is_active"],
+    usuario_objetivos: ["usuario_id", "objetivo_id", "prioridad", "estado"],
+    condiciones_clinicas: ["id", "code", "risk_level", "requires_professional_guidance", "is_active"],
+    usuario_condiciones: ["usuario_id", "condicion_id", "source"],
+    reglas_nutricionales: ["scope_type", "scope_code", "nutrient", "rule_type", "min_value", "max_value", "unit", "severity"],
+    usuario_metas_nutricionales: ["usuario_id", "calories_min", "calories_max", "protein_min_g", "protein_max_g", "calculation_source"]
+  });
+
+  const catalogs = await client.query(`
+    SELECT
+      (SELECT array_agg(code ORDER BY code) FROM objetivos_nutricionales
+       WHERE code = ANY($1::text[])) AS goals,
+      (SELECT array_agg(code ORDER BY code) FROM condiciones_clinicas
+       WHERE code = ANY($2::text[])) AS conditions
+  `, [
+    ["gain_muscle", "lose_body_fat", "maintain_weight", "general_health", "control_glucose", "reduce_cholesterol", "control_blood_pressure", "improve_digestion", "increase_energy", "sports_performance", "medical_diet", "manage_allergies"],
+    ["diabetes", "hypertension", "high_cholesterol", "kidney_disease", "heart_disease", "celiac_disease", "lactose_intolerance", "food_allergies", "gastritis", "ibs", "anemia", "pregnancy", "obesity"]
+  ]);
+  if (catalogs.rows[0].goals?.length !== 12 || catalogs.rows[0].conditions?.length !== 13) {
+    throw new Error("Migration 001 verification failed: initial goal or condition catalog is incomplete");
+  }
+};
+
+const assertMigration002 = async (client) => {
+  await assertRelations(client, "002", [
+    "vision_analysis_usage",
+    "idx_vision_analysis_usage_user_created",
+    "idx_vision_analysis_usage_created_status"
+  ]);
+  await assertColumns(client, "002", {
+    vision_analysis_usage: ["request_id", "usuario_id", "provider", "model", "status", "input_tokens", "output_tokens", "total_tokens", "reserved_cost_usd", "estimated_cost_usd", "error_code", "created_at", "completed_at"]
+  });
+};
+
+const assertMigration003 = async (client) => {
+  await assertRelations(client, "003", [
+    "revisiones_documentos_medicos",
+    "aplicaciones_documentos_medicos",
+    "idx_revisiones_documentos_usuario_fecha",
+    "idx_aplicaciones_documentos_usuario_fecha"
+  ]);
+  await assertColumns(client, "003", {
+    revisiones_documentos_medicos: ["id", "usuario_id", "request_id", "schema_version", "document_type", "extraction", "accepted_finding_ids", "accepted_findings", "status", "reviewed_at", "updated_at"],
+    aplicaciones_documentos_medicos: ["id", "revision_id", "usuario_id", "confirmation_version", "preview_hash", "applied_changes", "applied_at"]
+  });
+};
+
+const assertMigration004 = async (client) => {
+  await assertRelations(client, "004", ["idx_revisiones_documentos_expiration"]);
+  await assertColumns(client, "004", {
+    revisiones_documentos_medicos: ["retention_policy_version", "expires_at"]
+  });
+};
+
 const assertMigration005 = async (client) => {
   const result = await client.query(`
     SELECT c.conname, c.confdeltype, c.confrelid::regclass::text AS referenced_table
@@ -123,9 +222,37 @@ const assertMigration006 = async (client) => {
   }
 };
 
+const assertMigration007 = async (client) => {
+  await assertColumns(client, "007", {
+    notification_preferences: [
+      "meal_reminder_times",
+      "weekly_plan_reminder_day",
+      "weekly_plan_reminder_time",
+      "shopping_reminder_day",
+      "shopping_reminder_time"
+    ]
+  });
+  const checks = await client.query(`
+    SELECT pg_get_constraintdef(oid) AS definition
+    FROM pg_constraint
+    WHERE contype = 'c' AND conrelid = 'public.notification_preferences'::regclass
+  `);
+  const definitions = checks.rows.map((row) => row.definition);
+  for (const dayColumn of ["weekly_plan_reminder_day", "shopping_reminder_day"]) {
+    if (!definitions.some((definition) => definition.includes(dayColumn) && definition.includes("<= 6"))) {
+      throw new Error(`Migration 007 verification failed: missing day range check for ${dayColumn}`);
+    }
+  }
+};
+
 const migrationVerifiers = {
+  "001": assertMigration001,
+  "002": assertMigration002,
+  "003": assertMigration003,
+  "004": assertMigration004,
   "005": assertMigration005,
-  "006": assertMigration006
+  "006": assertMigration006,
+  "007": assertMigration007
 };
 
 const run = async () => {
