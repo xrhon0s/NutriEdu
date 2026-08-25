@@ -90,6 +90,165 @@ const getOperationsOverview = async (req, res) => {
   }
 };
 
+const listUsers = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(5, Number.parseInt(req.query.limit, 10) || 15));
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const role = ["usuario", "administrador"].includes(req.query.role) ? req.query.role : null;
+    const offset = (page - 1) * limit;
+    const params = [];
+    const filters = [];
+    if (search) {
+      params.push(`%${search}%`);
+      filters.push(`(u.nombre ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+    }
+    if (role) {
+      params.push(role);
+      filters.push(`u.rol = $${params.length}`);
+    }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM usuarios u ${where}`, params);
+    params.push(limit, offset);
+    const users = await pool.query(`
+      SELECT
+        u.id, u.nombre, u.email, u.rol, u.fecha_registro,
+        (p.usuario_id IS NOT NULL) AS has_profile,
+        COUNT(DISTINCT uo.objetivo_id)::int AS goals_count,
+        COUNT(DISTINCT uc.condicion_id)::int AS conditions_count,
+        COUNT(DISTINCT ur.restriccion_id)::int AS restrictions_count
+      FROM usuarios u
+      LEFT JOIN perfiles_usuario p ON p.usuario_id = u.id
+      LEFT JOIN usuario_objetivos uo ON uo.usuario_id = u.id
+      LEFT JOIN usuario_condiciones uc ON uc.usuario_id = u.id
+      LEFT JOIN usuario_restricciones ur ON ur.usuario_id = u.id
+      ${where}
+      GROUP BY u.id, p.usuario_id
+      ORDER BY u.fecha_registro DESC NULLS LAST, u.id DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}
+    `, params);
+    const total = countResult.rows[0].total;
+    return res.json({
+      items: users.rows,
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    });
+  } catch (error) {
+    console.error("Error listando usuarios administrativos:", error);
+    return res.status(500).json({ error: "Error consultando usuarios" });
+  }
+};
+
+const updateUserRole = async (req, res) => {
+  const userId = Number.parseInt(req.params.id, 10);
+  const role = req.body?.role;
+  if (!Number.isInteger(userId) || !["usuario", "administrador"].includes(role)) {
+    return res.status(400).json({ message: "Usuario o rol invalido" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const userResult = await client.query("SELECT id, nombre, email, rol FROM usuarios WHERE id = $1 FOR UPDATE", [userId]);
+    const user = userResult.rows[0];
+    if (!user) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+    if (user.rol === "administrador" && role !== "administrador") {
+      const admins = await client.query("SELECT COUNT(*)::int AS total FROM usuarios WHERE rol = 'administrador'");
+      if (admins.rows[0].total <= 1) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "No puedes remover el rol del ultimo administrador" });
+      }
+    }
+    const updated = await client.query(
+      "UPDATE usuarios SET rol = $1 WHERE id = $2 RETURNING id, nombre, email, rol, fecha_registro",
+      [role, userId]
+    );
+    await client.query("COMMIT");
+    return res.json(updated.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error actualizando rol:", error);
+    return res.status(500).json({ error: "Error actualizando el rol" });
+  } finally {
+    client.release();
+  }
+};
+
+const catalogConfig = {
+  goals: { table: "objetivos_nutricionales", condition: false },
+  conditions: { table: "condiciones_clinicas", condition: true }
+};
+
+const getCatalogConfig = (value) => catalogConfig[value] || null;
+const normalizeCatalogInput = (body, isCondition) => {
+  const code = typeof body.code === "string" ? body.code.trim().toLowerCase() : "";
+  const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
+  const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : "";
+  if (!/^[a-z][a-z0-9_]{2,79}$/.test(code) || nombre.length < 2 || nombre.length > 120 || descripcion.length > 1200) return null;
+  const normalized = { code, nombre, descripcion: descripcion || null, isActive: body.isActive !== false };
+  if (isCondition) {
+    if (!["low", "medium", "high"].includes(body.riskLevel)) return null;
+    normalized.riskLevel = body.riskLevel;
+    normalized.requiresGuidance = body.requiresProfessionalGuidance === true;
+  }
+  return normalized;
+};
+
+const listClinicalCatalogs = async (_req, res) => {
+  try {
+    const [goals, conditions] = await Promise.all([
+      pool.query("SELECT id, code, nombre, descripcion, is_active FROM objetivos_nutricionales ORDER BY is_active DESC, nombre"),
+      pool.query("SELECT id, code, nombre, descripcion, risk_level, requires_professional_guidance, is_active FROM condiciones_clinicas ORDER BY is_active DESC, risk_level DESC, nombre")
+    ]);
+    return res.json({ goals: goals.rows, conditions: conditions.rows });
+  } catch (error) {
+    console.error("Error consultando catalogos clinicos:", error);
+    return res.status(500).json({ error: "Error consultando catalogos clinicos" });
+  }
+};
+
+const createClinicalCatalogItem = async (req, res) => {
+  const config = getCatalogConfig(req.params.catalog);
+  const input = config && normalizeCatalogInput(req.body || {}, config.condition);
+  if (!config || !input) return res.status(400).json({ message: "Catalogo o datos invalidos" });
+  try {
+    const query = config.condition
+      ? `INSERT INTO ${config.table} (code, nombre, descripcion, risk_level, requires_professional_guidance, is_active) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`
+      : `INSERT INTO ${config.table} (code, nombre, descripcion, is_active) VALUES ($1,$2,$3,$4) RETURNING *`;
+    const values = config.condition
+      ? [input.code, input.nombre, input.descripcion, input.riskLevel, input.requiresGuidance, input.isActive]
+      : [input.code, input.nombre, input.descripcion, input.isActive];
+    return res.status(201).json((await pool.query(query, values)).rows[0]);
+  } catch (error) {
+    if (error.code === "23505") return res.status(409).json({ message: "El codigo ya existe" });
+    console.error("Error creando elemento clinico:", error);
+    return res.status(500).json({ error: "Error creando elemento clinico" });
+  }
+};
+
+const updateClinicalCatalogItem = async (req, res) => {
+  const config = getCatalogConfig(req.params.catalog);
+  const id = Number.parseInt(req.params.id, 10);
+  const input = config && normalizeCatalogInput(req.body || {}, config.condition);
+  if (!config || !Number.isInteger(id) || !input) return res.status(400).json({ message: "Catalogo o datos invalidos" });
+  try {
+    const query = config.condition
+      ? `UPDATE ${config.table} SET code=$1, nombre=$2, descripcion=$3, risk_level=$4, requires_professional_guidance=$5, is_active=$6 WHERE id=$7 RETURNING *`
+      : `UPDATE ${config.table} SET code=$1, nombre=$2, descripcion=$3, is_active=$4 WHERE id=$5 RETURNING *`;
+    const values = config.condition
+      ? [input.code, input.nombre, input.descripcion, input.riskLevel, input.requiresGuidance, input.isActive, id]
+      : [input.code, input.nombre, input.descripcion, input.isActive, id];
+    const result = await pool.query(query, values);
+    if (!result.rows[0]) return res.status(404).json({ message: "Elemento no encontrado" });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") return res.status(409).json({ message: "El codigo ya existe" });
+    console.error("Error actualizando elemento clinico:", error);
+    return res.status(500).json({ error: "Error actualizando elemento clinico" });
+  }
+};
+
 // ================= Recetas =================
 
 // Listar recetas con ingredientes
@@ -280,6 +439,11 @@ const normalizeName = (value) => typeof value === "string" ? value.trim().slice(
 
 module.exports = {
   getOperationsOverview,
+  listUsers,
+  updateUserRole,
+  listClinicalCatalogs,
+  createClinicalCatalogItem,
+  updateClinicalCatalogItem,
   listRecipes,
   createRecipe,
   updateRecipe,

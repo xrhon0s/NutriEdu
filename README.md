@@ -446,8 +446,21 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `PUT /api/admin/ingredients/:id`
 - `DELETE /api/admin/ingredients/:id`
 - `GET /api/admin/overview`
+- `GET /api/admin/users?page=1&limit=15&search=&role=`
+- `PATCH /api/admin/users/:id/role`
+- `GET /api/admin/clinical-catalogs`
+- `POST /api/admin/clinical-catalogs/:catalog`
+- `PATCH /api/admin/clinical-catalogs/:catalog/:id`
 
 `overview` devuelve un resumen operativo agregado: usuarios, cobertura de perfiles, volumen de catalogos, notificaciones sin leer, consumo y presupuesto de vision, proveedor configurado y estado del ledger de migraciones. No devuelve filas de usuarios, documentos clinicos, tokens ni secretos.
+
+La consulta de usuarios pagina y filtra por nombre, correo o rol sin devolver `password_hash`. El cambio de rol es transaccional y no permite degradar al ultimo administrador. Los catalogos admitidos son `goals` y `conditions`; sus codigos se validan mediante allowlist de formato y los elementos se desactivan para conservar relaciones historicas.
+
+El smoke administrativo local crea una cuenta temporal, prueba busqueda, catalogos y cambio de rol, y elimina la cuenta al terminar:
+
+```bash
+SMOKE_API_URL=http://localhost:3002/api npm run test:admin-smoke
+```
 
 ### Documentos medicos
 
