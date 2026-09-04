@@ -249,6 +249,191 @@ const updateClinicalCatalogItem = async (req, res) => {
   }
 };
 
+const ruleOptions = {
+  scopeTypes: ["global", "goal", "condition"],
+  nutrients: ["calories", "protein_g", "carbs_g", "fat_g", "saturated_fat_g", "sugar_g", "fiber_g", "sodium_mg"],
+  ruleTypes: ["min", "max", "range", "recommendation"],
+  severities: ["info", "warning", "danger"]
+};
+
+const normalizeRuleInput = (body = {}) => {
+  const scopeType = ruleOptions.scopeTypes.includes(body.scopeType) ? body.scopeType : null;
+  const scopeCode = typeof body.scopeCode === "string" ? body.scopeCode.trim().toLowerCase() : "";
+  const nutrient = ruleOptions.nutrients.includes(body.nutrient) ? body.nutrient : null;
+  const ruleType = ruleOptions.ruleTypes.includes(body.ruleType) ? body.ruleType : null;
+  const severity = ruleOptions.severities.includes(body.severity) ? body.severity : null;
+  const unit = typeof body.unit === "string" ? body.unit.trim() : "";
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+  const parseValue = (value) => value === "" || value === null || value === undefined ? null : Number(value);
+  const minValue = parseValue(body.minValue);
+  const maxValue = parseValue(body.maxValue);
+  const numbersValid = [minValue, maxValue].every((value) => value === null || (Number.isFinite(value) && value >= 0));
+  const boundsValid = ruleType === "min" ? minValue !== null
+    : ruleType === "max" ? maxValue !== null
+      : ruleType === "range" ? minValue !== null && maxValue !== null && minValue <= maxValue
+        : true;
+  if (!scopeType || !/^[a-z][a-z0-9_]{2,79}$/.test(scopeCode) || !nutrient || !ruleType || !severity ||
+      !numbersValid || !boundsValid || unit.length < 1 || unit.length > 30 || message.length < 5 || message.length > 1200) return null;
+  return { scopeType, scopeCode, nutrient, ruleType, minValue, maxValue, unit, severity, message, isActive: body.isActive !== false };
+};
+
+const validateRuleScope = async (input) => {
+  if (input.scopeType === "global") return input.scopeCode === "default";
+  const table = input.scopeType === "goal" ? "objetivos_nutricionales" : "condiciones_clinicas";
+  const result = await pool.query(`SELECT 1 FROM ${table} WHERE code = $1`, [input.scopeCode]);
+  return Boolean(result.rows[0]);
+};
+
+const listNutritionRules = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(5, Number.parseInt(req.query.limit, 10) || 20));
+    const scopeType = ruleOptions.scopeTypes.includes(req.query.scopeType) ? req.query.scopeType : null;
+    const active = req.query.active === "true" ? true : req.query.active === "false" ? false : null;
+    const params = [];
+    const filters = [];
+    if (scopeType) { params.push(scopeType); filters.push(`scope_type = $${params.length}`); }
+    if (active !== null) { params.push(active); filters.push(`is_active = $${params.length}`); }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM reglas_nutricionales ${where}`, params);
+    params.push(limit, (page - 1) * limit);
+    const result = await pool.query(
+      `SELECT id, scope_type, scope_code, nutrient, rule_type, min_value, max_value, unit, severity, message, is_active, created_at
+       FROM reglas_nutricionales ${where}
+       ORDER BY is_active DESC, scope_type, scope_code, nutrient, id
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const total = totalResult.rows[0].total;
+    return res.json({
+      items: result.rows,
+      options: ruleOptions,
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    });
+  } catch (error) {
+    console.error("Error consultando reglas nutricionales:", error);
+    return res.status(500).json({ error: "Error consultando reglas nutricionales" });
+  }
+};
+
+const saveNutritionRule = async (req, res) => {
+  const id = req.params.id ? Number.parseInt(req.params.id, 10) : null;
+  const input = normalizeRuleInput(req.body);
+  if (!input || (req.params.id && !Number.isInteger(id))) return res.status(400).json({ message: "Regla nutricional invalida" });
+  try {
+    if (!(await validateRuleScope(input))) return res.status(400).json({ message: "El alcance seleccionado no existe" });
+    const values = [input.scopeType, input.scopeCode, input.nutrient, input.ruleType, input.minValue, input.maxValue, input.unit, input.severity, input.message, input.isActive];
+    const result = id
+      ? await pool.query(
+        `UPDATE reglas_nutricionales SET scope_type=$1, scope_code=$2, nutrient=$3, rule_type=$4, min_value=$5, max_value=$6, unit=$7, severity=$8, message=$9, is_active=$10 WHERE id=$11 RETURNING *`,
+        [...values, id]
+      )
+      : await pool.query(
+        `INSERT INTO reglas_nutricionales (scope_type, scope_code, nutrient, rule_type, min_value, max_value, unit, severity, message, is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        values
+      );
+    if (!result.rows[0]) return res.status(404).json({ message: "Regla no encontrada" });
+    return res.status(id ? 200 : 201).json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") return res.status(409).json({ message: "Ya existe una regla equivalente" });
+    console.error("Error guardando regla nutricional:", error);
+    return res.status(500).json({ error: "Error guardando regla nutricional" });
+  }
+};
+
+const normalizeRestrictionInput = (body = {}) => {
+  const nombre = typeof body.nombre === "string" ? body.nombre.trim().toLowerCase() : "";
+  const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : "";
+  if (nombre.length < 2 || nombre.length > 120 || descripcion.length > 1200) return null;
+  return { nombre, descripcion: descripcion || null, isActive: body.isActive !== false };
+};
+
+const listRestrictionsAdmin = async (req, res) => {
+  try {
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const params = search ? [`%${search}%`] : [];
+    const where = search ? "WHERE nombre ILIKE $1 OR descripcion ILIKE $1" : "";
+    const result = await pool.query(
+      `SELECT r.id, r.nombre, r.descripcion, r.is_active,
+         COUNT(DISTINCT ur.usuario_id)::int AS users_count,
+         COUNT(DISTINCT ir.ingrediente_id)::int AS ingredients_count
+       FROM restricciones r
+       LEFT JOIN usuario_restricciones ur ON ur.restriccion_id = r.id
+       LEFT JOIN ingrediente_restricciones ir ON ir.restriccion_id = r.id
+       ${where}
+       GROUP BY r.id
+       ORDER BY r.is_active DESC, r.nombre`,
+      params
+    );
+    return res.json({ items: result.rows });
+  } catch (error) {
+    console.error("Error consultando restricciones:", error);
+    return res.status(500).json({ error: "Error consultando restricciones" });
+  }
+};
+
+const saveRestrictionAdmin = async (req, res) => {
+  const id = req.params.id ? Number.parseInt(req.params.id, 10) : null;
+  const input = normalizeRestrictionInput(req.body);
+  if (!input || (req.params.id && !Number.isInteger(id))) return res.status(400).json({ message: "Restriccion invalida" });
+  try {
+    const duplicate = await pool.query("SELECT id FROM restricciones WHERE LOWER(nombre) = LOWER($1) AND ($2::int IS NULL OR id <> $2)", [input.nombre, id]);
+    if (duplicate.rows[0]) return res.status(409).json({ message: "Ya existe una restriccion con ese nombre" });
+    const result = id
+      ? await pool.query("UPDATE restricciones SET nombre=$1, descripcion=$2, is_active=$3 WHERE id=$4 RETURNING *", [input.nombre, input.descripcion, input.isActive, id])
+      : await pool.query("INSERT INTO restricciones (nombre, descripcion, is_active) VALUES ($1,$2,$3) RETURNING *", [input.nombre, input.descripcion, input.isActive]);
+    if (!result.rows[0]) return res.status(404).json({ message: "Restriccion no encontrada" });
+    return res.status(id ? 200 : 201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error guardando restriccion:", error);
+    return res.status(500).json({ error: "Error guardando restriccion" });
+  }
+};
+
+const listVisionUsage = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(5, Number.parseInt(req.query.limit, 10) || 20));
+    const status = ["pending", "succeeded", "failed"].includes(req.query.status) ? req.query.status : null;
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const params = [];
+    const filters = [];
+    if (status) { params.push(status); filters.push(`v.status = $${params.length}`); }
+    if (search) { params.push(`%${search}%`); filters.push(`(u.nombre ILIKE $${params.length} OR u.email ILIKE $${params.length})`); }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const summaryParams = [...params];
+    const summary = await pool.query(
+      `SELECT COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE v.status='succeeded')::int AS succeeded,
+         COUNT(*) FILTER (WHERE v.status='failed')::int AS failed,
+         COUNT(*) FILTER (WHERE v.status='pending')::int AS pending,
+         COALESCE(SUM(v.total_tokens),0)::int AS total_tokens,
+         COALESCE(SUM(CASE WHEN v.status='succeeded' THEN v.estimated_cost_usd WHEN v.status='pending' THEN v.reserved_cost_usd ELSE 0 END),0)::numeric AS committed_usd
+       FROM vision_analysis_usage v JOIN usuarios u ON u.id=v.usuario_id ${where}`,
+      summaryParams
+    );
+    params.push(limit, (page - 1) * limit);
+    const result = await pool.query(
+      `SELECT v.request_id, v.usuario_id, u.nombre AS user_name, u.email AS user_email, v.provider, v.model, v.status,
+         v.input_tokens, v.output_tokens, v.total_tokens, v.reserved_cost_usd, v.estimated_cost_usd, v.error_code, v.created_at, v.completed_at
+       FROM vision_analysis_usage v JOIN usuarios u ON u.id=v.usuario_id ${where}
+       ORDER BY v.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const totals = summary.rows[0];
+    const policy = getVisionUsagePolicy();
+    return res.json({
+      items: result.rows,
+      summary: { ...totals, committed_usd: Number(totals.committed_usd) },
+      policy,
+      pagination: { page, limit, total: totals.total, totalPages: Math.max(1, Math.ceil(totals.total / limit)) }
+    });
+  } catch (error) {
+    console.error("Error consultando uso de IA:", error);
+    return res.status(500).json({ error: "Error consultando uso de IA" });
+  }
+};
+
 // ================= Recetas =================
 
 // Listar recetas con ingredientes
@@ -444,6 +629,11 @@ module.exports = {
   listClinicalCatalogs,
   createClinicalCatalogItem,
   updateClinicalCatalogItem,
+  listNutritionRules,
+  saveNutritionRule,
+  listRestrictionsAdmin,
+  saveRestrictionAdmin,
+  listVisionUsage,
   listRecipes,
   createRecipe,
   updateRecipe,

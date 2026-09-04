@@ -451,12 +451,21 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `GET /api/admin/clinical-catalogs`
 - `POST /api/admin/clinical-catalogs/:catalog`
 - `PATCH /api/admin/clinical-catalogs/:catalog/:id`
+- `GET /api/admin/nutrition-rules?page=1&limit=20&scopeType=&active=`
+- `POST /api/admin/nutrition-rules`
+- `PATCH /api/admin/nutrition-rules/:id`
+- `GET /api/admin/restrictions?search=`
+- `POST /api/admin/restrictions`
+- `PATCH /api/admin/restrictions/:id`
+- `GET /api/admin/vision-usage?page=1&limit=20&status=&search=`
 
 `overview` devuelve un resumen operativo agregado: usuarios, cobertura de perfiles, volumen de catalogos, notificaciones sin leer, consumo y presupuesto de vision, proveedor configurado y estado del ledger de migraciones. No devuelve filas de usuarios, documentos clinicos, tokens ni secretos.
 
 La consulta de usuarios pagina y filtra por nombre, correo o rol sin devolver `password_hash`. El cambio de rol es transaccional y no permite degradar al ultimo administrador. Los catalogos admitidos son `goals` y `conditions`; sus codigos se validan mediante allowlist de formato y los elementos se desactivan para conservar relaciones historicas.
 
-El smoke administrativo local crea una cuenta temporal, prueba busqueda, catalogos y cambio de rol, y elimina la cuenta al terminar:
+Las reglas nutricionales validan alcance, catalogo asociado, nutriente, tipo, limites y severidad mediante allowlists. Las restricciones se crean, editan y desactivan sin romper relaciones existentes. El detalle de IA muestra solicitudes, tokens, costos estimados y errores; la politica de limites es solo lectura porque sus valores pertenecen a la configuracion protegida del backend.
+
+El smoke administrativo local crea una cuenta temporal, prueba busqueda, catalogos, reglas, restricciones, uso de IA y cambio de rol, y elimina la cuenta al terminar:
 
 ```bash
 SMOKE_API_URL=http://localhost:3002/api npm run test:admin-smoke
@@ -594,14 +603,22 @@ migrations/007_notification_schedules.sql
 
 Esta version conserva horarios para desayuno, almuerzo, cena, preparacion del plan y compras. Persistir el horario no concede permisos ni programa por si solo una notificacion del sistema.
 
+El ciclo de vida del catalogo de restricciones requiere:
+
+```txt
+migrations/008_restriction_catalog_lifecycle.sql
+```
+
+Agrega `restricciones.is_active` para retirar opciones del catalogo publico sin eliminar asociaciones historicas con usuarios e ingredientes.
+
 ### Ejecucion de migraciones
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
 
 ```bash
 npm run migrate:status
-npm run migrate -- 001 002 003 004 005 006 007
-npm run migrate:baseline -- 001 002 003 004 005 006 007
+npm run migrate -- 001 002 003 004 005 006 007 008
+npm run migrate:baseline -- 001 002 003 004 005 006 007 008
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.
@@ -615,10 +632,10 @@ Para mantener separadas las credenciales locales y de produccion, guarda tempora
 ```bash
 MIGRATION_ENV_FILE=.env.production.local npm run migrate:status
 MIGRATION_ENV_FILE=.env.production.local npm run migrate:baseline -- 001 002 003 004
-MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007
+MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007 008
 ```
 
-El ejemplo anterior supone que `001-004` ya existen y `005-007` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
+El ejemplo anterior supone que `001-004` ya existen y `005-008` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
 
 ## Verificacion rapida
 

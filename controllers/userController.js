@@ -324,6 +324,7 @@ const getAllRestrictions = async (req, res) => {
     const result = await pool.query(
       `SELECT id AS restriccion_id, nombre
        FROM restricciones
+       WHERE is_active = TRUE
        ORDER BY id`
     );
 

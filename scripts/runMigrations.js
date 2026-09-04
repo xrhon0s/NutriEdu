@@ -245,6 +245,11 @@ const assertMigration007 = async (client) => {
   }
 };
 
+const assertMigration008 = async (client) => {
+  await assertRelations(client, "008", ["idx_restricciones_active_name"]);
+  await assertColumns(client, "008", { restricciones: ["is_active"] });
+};
+
 const migrationVerifiers = {
   "001": assertMigration001,
   "002": assertMigration002,
@@ -252,7 +257,8 @@ const migrationVerifiers = {
   "004": assertMigration004,
   "005": assertMigration005,
   "006": assertMigration006,
-  "007": assertMigration007
+  "007": assertMigration007,
+  "008": assertMigration008
 };
 
 const run = async () => {
