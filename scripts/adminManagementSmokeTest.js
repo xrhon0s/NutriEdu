@@ -16,6 +16,14 @@ const request = async (path, options = {}) => {
 };
 
 const run = async () => {
+  const weakPasswordResponse = await fetch(`${apiUrl}/users/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre: "Weak Password", email: `weak-${runId}@example.test`, password: "1234" })
+  });
+  if (weakPasswordResponse.status !== 400 || (await weakPasswordResponse.json()).code !== "WEAK_PASSWORD") {
+    throw new Error("Weak registration password was not rejected by the API");
+  }
   const passwordHash = await bcrypt.hash(password, 10);
   const inserted = await pool.query(
     "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES ($1,$2,$3,'administrador') RETURNING id",
@@ -29,11 +37,13 @@ const run = async () => {
   const rules = await request("/admin/nutrition-rules?page=1&limit=5", { headers });
   const restrictions = await request("/admin/restrictions", { headers });
   const visionUsage = await request("/admin/vision-usage?page=1&limit=5", { headers });
+  const recipes = await request("/admin/recipes?page=1&limit=5&search=", { headers });
+  const ingredients = await request("/admin/ingredients?page=1&limit=5&foodGroup=protein", { headers });
   const role = await request(`/admin/users/${userId}/role`, { method: "PATCH", headers, body: JSON.stringify({ role: "usuario" }) });
-  if (users.pagination.total !== 1 || !catalogs.goals.length || !catalogs.conditions.length || !rules.items.length || !restrictions.items.length || !visionUsage.policy || role.rol !== "usuario") {
+  if (users.pagination.total !== 1 || !catalogs.goals.length || !catalogs.conditions.length || !rules.items.length || !restrictions.items.length || !visionUsage.policy || !recipes.pagination || !ingredients.pagination || role.rol !== "usuario") {
     throw new Error("Admin management smoke contract returned an unexpected result");
   }
-  console.log(JSON.stringify({ ok: true, userSearch: true, catalogs: true, rules: true, restrictions: true, visionUsage: true, roleChange: true }, null, 2));
+  console.log(JSON.stringify({ ok: true, weakPasswordRejected: true, userSearch: true, catalogs: true, rules: true, restrictions: true, visionUsage: true, recipePagination: true, ingredientPagination: true, roleChange: true }, null, 2));
 };
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {

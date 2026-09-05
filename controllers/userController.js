@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { sendPasswordResetEmail, sendWelcomeEmail } = require("../services/emailService");
 const { createInAppNotification } = require("../services/notificationService");
+const { validatePassword } = require("../utils/passwordPolicy");
 
 const hashResetToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
@@ -41,6 +42,15 @@ const registerUser = async (req, res) => {
   if (!emailRegex.test(email)) {
    return res.status(400).json({
     message: "Correo electrónico inválido"
+   });
+  }
+
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.valid) {
+   return res.status(400).json({
+    code: "WEAK_PASSWORD",
+    message: passwordValidation.message,
+    requirements: passwordValidation.checks
    });
   }
 
@@ -206,8 +216,13 @@ const resetPassword = async (req, res) => {
       return res.status(400).json({ message: "Token y contraseña son obligatorios" });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ message: "La contraseña debe tener al menos 6 caracteres" });
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({
+        code: "WEAK_PASSWORD",
+        message: passwordValidation.message,
+        requirements: passwordValidation.checks
+      });
     }
 
     await ensurePasswordResetTable();

@@ -164,9 +164,11 @@ Registra un usuario y dispara el correo de bienvenida.
 {
   "nombre": "David",
   "email": "david@email.com",
-  "password": "123456"
+  "password": "NutriEdu#2026"
 }
 ```
+
+Las contrasenas nuevas deben tener entre 10 y 72 caracteres e incluir mayuscula, minuscula, numero y simbolo. La API aplica la misma politica en registro y restablecimiento, independientemente del cliente.
 
 #### `POST /api/users/login`
 
@@ -198,7 +200,7 @@ Cambia la contrasena usando el token del correo.
 ```json
 {
   "token": "token_del_enlace",
-  "password": "nueva123"
+  "password": "NuevaClave#2026"
 }
 ```
 
@@ -437,11 +439,11 @@ Las rutas de perfil avanzado requieren JWT y usan `req.user.id`.
 
 Las rutas administrativas requieren usuario con rol `administrador`.
 
-- `GET /api/admin/recipes`
+- `GET /api/admin/recipes?page=1&limit=15&search=`
 - `POST /api/admin/recipes`
 - `PUT /api/admin/recipes/:id`
 - `DELETE /api/admin/recipes/:id`
-- `GET /api/admin/ingredients`
+- `GET /api/admin/ingredients?page=1&limit=15&search=&foodGroup=`
 - `POST /api/admin/ingredients`
 - `PUT /api/admin/ingredients/:id`
 - `DELETE /api/admin/ingredients/:id`
@@ -454,7 +456,7 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `GET /api/admin/nutrition-rules?page=1&limit=20&scopeType=&active=`
 - `POST /api/admin/nutrition-rules`
 - `PATCH /api/admin/nutrition-rules/:id`
-- `GET /api/admin/restrictions?search=`
+- `GET /api/admin/restrictions?page=1&limit=15&search=`
 - `POST /api/admin/restrictions`
 - `PATCH /api/admin/restrictions/:id`
 - `GET /api/admin/vision-usage?page=1&limit=20&status=&search=`
@@ -464,6 +466,8 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 La consulta de usuarios pagina y filtra por nombre, correo o rol sin devolver `password_hash`. El cambio de rol es transaccional y no permite degradar al ultimo administrador. Los catalogos admitidos son `goals` y `conditions`; sus codigos se validan mediante allowlist de formato y los elementos se desactivan para conservar relaciones historicas.
 
 Las reglas nutricionales validan alcance, catalogo asociado, nutriente, tipo, limites y severidad mediante allowlists. Las restricciones se crean, editan y desactivan sin romper relaciones existentes. El detalle de IA muestra solicitudes, tokens, costos estimados y errores; la politica de limites es solo lectura porque sus valores pertenecen a la configuracion protegida del backend.
+
+Recetas, ingredientes y restricciones administrativas se consultan con paginacion y busqueda del lado del servidor. Los ingredientes admiten filtro y clasificacion por grupo alimentario. `GET /api/admin/ingredients?all=true` se reserva para selectores internos que necesitan el catalogo completo.
 
 El smoke administrativo local crea una cuenta temporal, prueba busqueda, catalogos, reglas, restricciones, uso de IA y cambio de rol, y elimina la cuenta al terminar:
 
@@ -611,14 +615,22 @@ migrations/008_restriction_catalog_lifecycle.sql
 
 Agrega `restricciones.is_active` para retirar opciones del catalogo publico sin eliminar asociaciones historicas con usuarios e ingredientes.
 
+La clasificacion de ingredientes requiere:
+
+```txt
+migrations/009_ingredient_food_groups.sql
+```
+
+Agrega `ingredientes.food_group`, su restriccion de valores, indice de consulta y una clasificacion inicial del catalogo sembrado.
+
 ### Ejecucion de migraciones
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
 
 ```bash
 npm run migrate:status
-npm run migrate -- 001 002 003 004 005 006 007 008
-npm run migrate:baseline -- 001 002 003 004 005 006 007 008
+npm run migrate -- 001 002 003 004 005 006 007 008 009
+npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.
@@ -632,10 +644,10 @@ Para mantener separadas las credenciales locales y de produccion, guarda tempora
 ```bash
 MIGRATION_ENV_FILE=.env.production.local npm run migrate:status
 MIGRATION_ENV_FILE=.env.production.local npm run migrate:baseline -- 001 002 003 004
-MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007 008
+MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007 008 009
 ```
 
-El ejemplo anterior supone que `001-004` ya existen y `005-008` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
+El ejemplo anterior supone que `001-004` ya existen y `005-009` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
 
 ## Verificacion rapida
 

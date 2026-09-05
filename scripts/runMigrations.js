@@ -250,6 +250,11 @@ const assertMigration008 = async (client) => {
   await assertColumns(client, "008", { restricciones: ["is_active"] });
 };
 
+const assertMigration009 = async (client) => {
+  await assertRelations(client, "009", ["idx_ingredientes_food_group_name"]);
+  await assertColumns(client, "009", { ingredientes: ["food_group"] });
+};
+
 const migrationVerifiers = {
   "001": assertMigration001,
   "002": assertMigration002,
@@ -258,7 +263,8 @@ const migrationVerifiers = {
   "005": assertMigration005,
   "006": assertMigration006,
   "007": assertMigration007,
-  "008": assertMigration008
+  "008": assertMigration008,
+  "009": assertMigration009
 };
 
 const run = async () => {

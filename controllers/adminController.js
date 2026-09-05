@@ -256,6 +256,14 @@ const ruleOptions = {
   severities: ["info", "warning", "danger"]
 };
 
+const ingredientFoodGroups = ["protein", "carbohydrate", "vegetable", "fruit", "dairy", "fat", "legume", "seasoning", "beverage", "other"];
+
+const parseAdminPagination = (query, defaultLimit = 15) => {
+  const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(5, Number.parseInt(query.limit, 10) || defaultLimit));
+  return { page, limit, offset: (page - 1) * limit };
+};
+
 const normalizeRuleInput = (body = {}) => {
   const scopeType = ruleOptions.scopeTypes.includes(body.scopeType) ? body.scopeType : null;
   const scopeCode = typeof body.scopeCode === "string" ? body.scopeCode.trim().toLowerCase() : "";
@@ -350,9 +358,12 @@ const normalizeRestrictionInput = (body = {}) => {
 
 const listRestrictionsAdmin = async (req, res) => {
   try {
+    const { page, limit, offset } = parseAdminPagination(req.query);
     const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
     const params = search ? [`%${search}%`] : [];
-    const where = search ? "WHERE nombre ILIKE $1 OR descripcion ILIKE $1" : "";
+    const where = search ? "WHERE r.nombre ILIKE $1 OR r.descripcion ILIKE $1" : "";
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM restricciones r ${where}`, params);
+    params.push(limit, offset);
     const result = await pool.query(
       `SELECT r.id, r.nombre, r.descripcion, r.is_active,
          COUNT(DISTINCT ur.usuario_id)::int AS users_count,
@@ -362,10 +373,12 @@ const listRestrictionsAdmin = async (req, res) => {
        LEFT JOIN ingrediente_restricciones ir ON ir.restriccion_id = r.id
        ${where}
        GROUP BY r.id
-       ORDER BY r.is_active DESC, r.nombre`,
+       ORDER BY r.is_active DESC, r.nombre
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
-    return res.json({ items: result.rows });
+    const total = totalResult.rows[0].total;
+    return res.json({ items: result.rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (error) {
     console.error("Error consultando restricciones:", error);
     return res.status(500).json({ error: "Error consultando restricciones" });
@@ -439,6 +452,12 @@ const listVisionUsage = async (req, res) => {
 // Listar recetas con ingredientes
 const listRecipes = async (req, res) => {
   try {
+    const { page, limit, offset } = parseAdminPagination(req.query);
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const params = search ? [`%${search}%`] : [];
+    const where = search ? "WHERE r.nombre ILIKE $1 OR r.descripcion ILIKE $1" : "";
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM recetas r ${where}`, params);
+    params.push(limit, offset);
     const result = await pool.query(`
       SELECT r.id, r.nombre, r.descripcion, r.calorias, r.tiempo_preparacion,
         COALESCE(
@@ -448,10 +467,13 @@ const listRecipes = async (req, res) => {
       FROM recetas r
       LEFT JOIN receta_ingredientes ri ON r.id = ri.receta_id
       LEFT JOIN ingredientes i ON ri.ingrediente_id = i.id
+      ${where}
       GROUP BY r.id
-      ORDER BY r.id
-    `);
-    res.json(result.rows);
+      ORDER BY r.id DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}
+    `, params);
+    const total = totalResult.rows[0].total;
+    res.json({ items: result.rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error obteniendo recetas" });
@@ -559,8 +581,23 @@ const deleteRecipe = async (req, res) => {
 // Listar ingredientes
 const listIngredients = async (req, res) => {
   try {
-    const result = await pool.query(`SELECT id, nombre FROM ingredientes ORDER BY nombre`);
-    res.json(result.rows);
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const foodGroup = ingredientFoodGroups.includes(req.query.foodGroup) ? req.query.foodGroup : null;
+    const params = [];
+    const filters = [];
+    if (search) { params.push(`%${search}%`); filters.push(`nombre ILIKE $${params.length}`); }
+    if (foodGroup) { params.push(foodGroup); filters.push(`food_group = $${params.length}`); }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    if (req.query.all === "true") {
+      const result = await pool.query(`SELECT id, nombre, food_group FROM ingredientes ${where} ORDER BY food_group, nombre`, params);
+      return res.json({ items: result.rows, foodGroups: ingredientFoodGroups });
+    }
+    const { page, limit, offset } = parseAdminPagination(req.query);
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM ingredientes ${where}`, params);
+    params.push(limit, offset);
+    const result = await pool.query(`SELECT id, nombre, food_group FROM ingredientes ${where} ORDER BY food_group, nombre LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+    const total = totalResult.rows[0].total;
+    return res.json({ items: result.rows, foodGroups: ingredientFoodGroups, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error obteniendo ingredientes" });
@@ -570,11 +607,12 @@ const listIngredients = async (req, res) => {
 // Crear ingrediente
 const createIngredient = async (req, res) => {
   const nombre = normalizeName(req.body.nombre);
-  if (!nombre) return res.status(400).json({ message: "El nombre del ingrediente es obligatorio" });
+  const foodGroup = ingredientFoodGroups.includes(req.body.foodGroup) ? req.body.foodGroup : null;
+  if (!nombre || !foodGroup) return res.status(400).json({ message: "El nombre y grupo del ingrediente son obligatorios" });
   try {
     const result = await pool.query(
-      `INSERT INTO ingredientes(nombre) VALUES ($1) RETURNING *`,
-      [nombre]
+      `INSERT INTO ingredientes(nombre, food_group) VALUES ($1, $2) RETURNING *`,
+      [nombre, foodGroup]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -586,13 +624,14 @@ const createIngredient = async (req, res) => {
 const updateIngredient = async (req, res) => {
   const id = Number(req.params.id);
   const nombre = normalizeName(req.body.nombre);
-  if (!Number.isSafeInteger(id) || id <= 0 || !nombre) {
+  const foodGroup = ingredientFoodGroups.includes(req.body.foodGroup) ? req.body.foodGroup : null;
+  if (!Number.isSafeInteger(id) || id <= 0 || !nombre || !foodGroup) {
     return res.status(400).json({ message: "Ingrediente invalido" });
   }
   try {
     const result = await pool.query(
-      "UPDATE ingredientes SET nombre = $2 WHERE id = $1 RETURNING id, nombre",
-      [id, nombre]
+      "UPDATE ingredientes SET nombre = $2, food_group = $3 WHERE id = $1 RETURNING id, nombre, food_group",
+      [id, nombre, foodGroup]
     );
     if (!result.rows[0]) return res.status(404).json({ message: "Ingrediente no encontrado" });
     return res.json(result.rows[0]);

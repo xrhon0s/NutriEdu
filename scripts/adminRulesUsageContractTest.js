@@ -5,6 +5,7 @@ const fakePool = {
     if (sql.includes("COUNT(*)::int AS total FROM reglas_nutricionales")) return { rows: [{ total: 1 }] };
     if (sql.includes("FROM reglas_nutricionales") && sql.includes("LIMIT")) return { rows: [{ id: 1, scope_type: "global", scope_code: "default", nutrient: "fiber_g", is_active: true }] };
     if (sql.includes("COUNT(DISTINCT ur.usuario_id)")) return { rows: [{ id: 1, nombre: "gluten", is_active: true, users_count: 2, ingredients_count: 4 }] };
+    if (sql.includes("COUNT(*)::int AS total FROM restricciones")) return { rows: [{ total: 1 }] };
     if (sql.includes("COUNT(*)::int AS total") && sql.includes("FROM vision_analysis_usage")) return { rows: [{ total: 1, succeeded: 1, failed: 0, pending: 0, total_tokens: 120, committed_usd: "0.0025" }] };
     if (sql.includes("v.request_id") && sql.includes("FROM vision_analysis_usage")) return { rows: [{ request_id: "00000000-0000-0000-0000-000000000001", status: "succeeded", total_tokens: 120 }] };
     throw new Error(`Unexpected admin phase 2 query: ${sql}`);
