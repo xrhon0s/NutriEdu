@@ -8,7 +8,8 @@ const {
   resetPassword,
   addRestrictions,
   getUserRestrictions,
-  getAllRestrictions
+  getAllRestrictions,
+  deleteAccount
 } = require("../controllers/userController");
 const verifyToken = require("../middleware/verifyToken");
 
@@ -19,5 +20,6 @@ router.post("/reset-password", resetPassword);
 router.post("/restrictions", verifyToken, addRestrictions);
 router.get("/restrictions/:userId", verifyToken, getUserRestrictions);
 router.get("/restrictions", verifyToken, getAllRestrictions);
+router.delete("/account", verifyToken, deleteAccount);
 
 module.exports = router;
