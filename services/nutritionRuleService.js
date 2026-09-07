@@ -173,7 +173,7 @@ const evaluateRecipeForUser = async (pool, { recipeId, userId }) => {
   const [recipeRes, unsafeRes, goalsRes, conditionsRes, targetsRes] = await Promise.all([
     pool.query("SELECT * FROM recetas WHERE id = $1", [recipeId]),
     pool.query(
-      `SELECT i.id, i.nombre
+      `SELECT DISTINCT i.id, i.nombre
        FROM receta_ingredientes ri
        JOIN ingredientes i ON ri.ingrediente_id = i.id
        JOIN ingrediente_restricciones ir ON i.id = ir.ingrediente_id

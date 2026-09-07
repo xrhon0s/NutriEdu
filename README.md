@@ -340,6 +340,12 @@ npm run test:clinical-smoke
 }
 ```
 
+Los ingredientes no seguros se devuelven una sola vez por receta, incluso cuando el mismo ingrediente coincide con varias restricciones del usuario. Esto evita alertas, grupos de sustitutos y penalizaciones duplicadas. El contrato se verifica con:
+
+```bash
+npm run test:recipe-safety
+```
+
 Estados posibles:
 
 - `suitable`

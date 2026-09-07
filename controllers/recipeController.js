@@ -99,12 +99,13 @@ const checkRecipeSafety = async (req, res) => {
 
     // Ingredientes no seguros
     const unsafeRes = await pool.query(
-      `SELECT i.id, i.nombre
+      `SELECT DISTINCT i.id, i.nombre
        FROM receta_ingredientes ri
        JOIN ingredientes i ON ri.ingrediente_id = i.id
        JOIN ingrediente_restricciones ir ON i.id = ir.ingrediente_id
        JOIN usuario_restricciones ur ON ir.restriccion_id = ur.restriccion_id
-       WHERE ri.receta_id = $1 AND ur.usuario_id = $2`,
+       WHERE ri.receta_id = $1 AND ur.usuario_id = $2
+       ORDER BY i.nombre ASC`,
       [recipeId, userId]
     );
     const unsafeIngredients = unsafeRes.rows;
