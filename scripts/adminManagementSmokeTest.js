@@ -1,6 +1,7 @@
 require("dotenv").config();
 const bcrypt = require("bcrypt");
 const pool = require("../database/db");
+const recipeTemplate = require("../templates/recipe_catalog/example.recipe.json");
 
 const apiUrl = process.env.SMOKE_API_URL || `http://localhost:${process.env.PORT || 3000}/api`;
 const runId = Date.now();
@@ -39,11 +40,16 @@ const run = async () => {
   const visionUsage = await request("/admin/vision-usage?page=1&limit=5", { headers });
   const recipes = await request("/admin/recipes?page=1&limit=5&search=", { headers });
   const ingredients = await request("/admin/ingredients?page=1&limit=5&foodGroup=protein", { headers });
+  const templateValidation = await request("/admin/recipes/template/validate", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(recipeTemplate)
+  });
   const role = await request(`/admin/users/${userId}/role`, { method: "PATCH", headers, body: JSON.stringify({ role: "usuario" }) });
-  if (users.pagination.total !== 1 || !catalogs.goals.length || !catalogs.conditions.length || !rules.items.length || !restrictions.items.length || !visionUsage.policy || !recipes.pagination || !ingredients.pagination || role.rol !== "usuario") {
+  if (users.pagination.total !== 1 || !catalogs.goals.length || !catalogs.conditions.length || !rules.items.length || !restrictions.items.length || !visionUsage.policy || !recipes.pagination || !ingredients.pagination || !templateValidation.valid || !templateValidation.summary.recommendationReady || role.rol !== "usuario") {
     throw new Error("Admin management smoke contract returned an unexpected result");
   }
-  console.log(JSON.stringify({ ok: true, weakPasswordRejected: true, userSearch: true, catalogs: true, rules: true, restrictions: true, visionUsage: true, recipePagination: true, ingredientPagination: true, roleChange: true }, null, 2));
+  console.log(JSON.stringify({ ok: true, weakPasswordRejected: true, userSearch: true, catalogs: true, rules: true, restrictions: true, visionUsage: true, recipePagination: true, ingredientPagination: true, recipeTemplateValidation: true, roleChange: true }, null, 2));
 };
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {

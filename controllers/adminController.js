@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { getVisionProvider } = require("../services/vision");
 const { getVisionUsagePolicy } = require("../services/visionUsageService");
+const { validateRecipeTemplate } = require("../services/recipeCatalogTemplateService");
 
 const getOperationsOverview = async (req, res) => {
   try {
@@ -449,6 +450,11 @@ const listVisionUsage = async (req, res) => {
 
 // ================= Recetas =================
 
+const validateRecipeCatalogTemplate = (req, res) => {
+  const result = validateRecipeTemplate(req.body);
+  return res.status(result.valid ? 200 : 400).json(result);
+};
+
 const recipeNutritionFields = [
   "protein_g", "carbs_g", "fat_g", "saturated_fat_g",
   "sugar_g", "fiber_g", "sodium_mg", "serving_size_g", "servings"
@@ -746,6 +752,7 @@ module.exports = {
   saveRestrictionAdmin,
   listVisionUsage,
   listRecipes,
+  validateRecipeCatalogTemplate,
   createRecipe,
   updateRecipe,
   deleteRecipe,

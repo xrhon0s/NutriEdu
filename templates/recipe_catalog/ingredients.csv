@@ -1,0 +1,3 @@
+external_key,nombre,food_group,fdc_id,calories_per_100g,protein_per_100g,carbs_per_100g,fat_per_100g,saturated_fat_per_100g,sugar_per_100g,fiber_per_100g,sodium_mg_per_100g,nutrition_source,source_reference
+chicken_breast,pechuga de pollo,protein,,165,31,0,3.6,1,0,0,74,manual,Referencia verificada requerida
+brown_rice,arroz integral,carbohydrate,,123,2.7,25.6,1,0.3,0.2,1.6,4,manual,Referencia verificada requerida

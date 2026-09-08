@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "externalKey": "chicken_rice_001",
+  "name": "Pollo con arroz",
+  "description": "Pollo a la plancha con arroz integral y vegetales",
+  "preparationMinutes": 35,
+  "healthLevel": 4,
+  "portion": { "servingSizeG": 420, "servings": 1 },
+  "nutritionPerServing": {
+    "calories": 540,
+    "proteinG": 42,
+    "carbsG": 58,
+    "fatG": 14,
+    "saturatedFatG": 3,
+    "sugarG": 5,
+    "fiberG": 8,
+    "sodiumMg": 480
+  },
+  "nutritionProvenance": {
+    "source": "manual",
+    "reference": "Ejemplo ilustrativo pendiente de verificacion"
+  },
+  "ingredients": [
+    { "externalKey": "chicken_breast", "name": "pechuga de pollo", "amount": 150, "unit": "g", "amountG": 150 },
+    { "externalKey": "brown_rice", "name": "arroz integral", "amount": 180, "unit": "g", "amountG": 180 }
+  ]
+}

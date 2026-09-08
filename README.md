@@ -265,6 +265,12 @@ Sin `paginated=true`, el endpoint conserva el arreglo historico usado por el fro
 
 `GET /api/recipes/recommendations?limit=6&offset=0` reemplaza la seleccion aleatoria por un ranking determinista. Primero excluye incompatibilidades por restricciones efectivas y despues evalua reglas de objetivos y condiciones, prioridad, metas diarias convertidas por numero de comidas, estimacion energetica aplicable y tiempo de preparacion. Cada receta incluye `score`, `status`, `confidence`, razones, advertencias y nutrientes faltantes; `profileContext` declara factores usados, conflictos y necesidad de revision profesional. El endpoint historico `recommended/:userId` conserva su arreglo para compatibilidad, pero utiliza el mismo motor.
 
+### Plantilla de nuevas recetas
+
+`POST /api/admin/recipes/template/validate` valida una receta canónica JSON antes de importarla. Requiere JWT administrativo y devuelve `errors` y `warnings` con ruta exacta, además de cobertura nutricional, `eligibilityReady` y `recommendationReady`. No escribe en la base de datos.
+
+La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): incluye tres hojas CSV y un ejemplo JSON aceptado por el validador. La guía integral vive en `docs/plantilla_catalogo_recetas.md` dentro del workspace general. La importación masiva e idempotente todavía es una fase posterior; las recetas individuales continúan creándose desde el panel administrativo.
+
 ### Intake de imagenes de comida
 
 #### `POST /api/food-analysis/intake`
@@ -681,7 +687,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen contratos automatizados para vision, limites de uso, esquema medico y cambios derivados de documentos, ademas del smoke autenticado `npm run test:clinical-smoke`.
+Existen doce contratos automatizados para visión, límites de uso, documentos médicos, administración, credenciales, seguridad de recetas, recomendaciones y plantilla de catálogo, además del smoke autenticado `npm run test:clinical-smoke`.
 
 ## Despliegue en Render
 

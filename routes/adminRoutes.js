@@ -18,6 +18,7 @@ const {
   listVisionUsage,
   listIngredients,
   listRecipes,
+  validateRecipeCatalogTemplate,
   updateIngredient,
   updateRecipe
 } = require("../controllers/adminController");
@@ -41,6 +42,7 @@ router.post("/restrictions", saveRestrictionAdmin);
 router.patch("/restrictions/:id", saveRestrictionAdmin);
 router.get("/vision-usage", listVisionUsage);
 router.get("/recipes", listRecipes);
+router.post("/recipes/template/validate", validateRecipeCatalogTemplate);
 router.get("/ingredients", listIngredients);
 router.post("/recipes", createRecipe);
 router.put("/recipes/:id", updateRecipe);
