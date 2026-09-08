@@ -472,11 +472,21 @@ const run = async () => {
     }
   }
 
-  const [recommendedRecipes, weeklyPlan, shoppingList] = await Promise.all([
+  const [recommendedRecipes, rankedRecommendations, weeklyPlan, shoppingList] = await Promise.all([
     request(`/recipes/recommended/${userId}`, { headers: authHeaders }),
+    request("/recipes/recommendations?limit=3&offset=0", { headers: authHeaders }),
     request(`/planner/${userId}`, { headers: authHeaders }),
     request(`/planner/${userId}/shopping-list`, { headers: authHeaders })
   ]);
+  if (
+    !Array.isArray(rankedRecommendations.recipes)
+    || rankedRecommendations.recipes.length > 3
+    || rankedRecommendations.pagination.limit !== 3
+    || !Array.isArray(rankedRecommendations.profileContext.usedFactors)
+    || rankedRecommendations.recipes.some((recipe, index, recipes) => index > 0 && recipe.recommendation.score > recipes[index - 1].recommendation.score)
+  ) {
+    throw new Error("Ranked recommendation endpoint returned an invalid contract or order");
+  }
 
   const defaultNotificationPreferences = await request("/notifications/preferences", { headers: authHeaders });
   const mutedNotificationPreferences = await request("/notifications/preferences", {
@@ -612,6 +622,8 @@ const run = async () => {
       : "skipped: no recipes available",
     mobileReads: {
       recommendations: recommendedRecipes.length,
+      rankedRecommendations: rankedRecommendations.recipes.length,
+      recommendationFactors: rankedRecommendations.profileContext.usedFactors,
       filteredRecipes: filteredRecipes.length,
       moderateRecipes: moderateRecipes.length,
       descriptionSearch,

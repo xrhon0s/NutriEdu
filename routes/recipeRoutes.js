@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getSafeRecipes,
   getRecommendedRecipes,
+  getRankedRecommendations,
   getRecipeById,
   getRecipeIngredients,
   checkRecipeSafety,
@@ -14,6 +15,7 @@ const verifyToken = require("../middleware/verifyToken");
 router.use(verifyToken);
 router.get("/safe/:userId", getSafeRecipes);
 router.get("/recommended/:userId", getRecommendedRecipes);
+router.get("/recommendations", getRankedRecommendations);
 router.get("/search/:userId", searchRecipes);
 router.get("/evaluate/:recipeId", evaluateRecipe);
 router.get("/:id", getRecipeById);

@@ -242,6 +242,7 @@ La eliminacion ocurre en una transaccion. Un administrador no puede eliminarse s
 - `GET /api/recipes/safe/:userId`
 - `GET /api/recipes/recommended/:userId`
 - `GET /api/recipes/search/:userId`
+- `GET /api/recipes/recommendations`
 - `GET /api/recipes/evaluate/:recipeId`
 - `GET /api/recipes/check/:recipeId/:userId`
 
@@ -261,6 +262,8 @@ El buscador acepta filtros como:
 - `offset`: posicion inicial no negativa, con valor predeterminado 0.
 
 Sin `paginated=true`, el endpoint conserva el arreglo historico usado por el frontend web. Con paginacion devuelve `recipes` y `pagination`, incluyendo `nextOffset` y `hasMore`. Los filtros numericos se validan antes de consultar PostgreSQL y los resultados se ordenan de forma estable por nivel de salud, calorias, nombre e ID.
+
+`GET /api/recipes/recommendations?limit=6&offset=0` reemplaza la seleccion aleatoria por un ranking determinista. Primero excluye incompatibilidades por restricciones efectivas y despues evalua reglas de objetivos y condiciones, prioridad, metas diarias convertidas por numero de comidas, estimacion energetica aplicable y tiempo de preparacion. Cada receta incluye `score`, `status`, `confidence`, razones, advertencias y nutrientes faltantes; `profileContext` declara factores usados, conflictos y necesidad de revision profesional. El endpoint historico `recommended/:userId` conserva su arreglo para compatibilidad, pero utiliza el mismo motor.
 
 ### Intake de imagenes de comida
 
@@ -629,14 +632,22 @@ migrations/009_ingredient_food_groups.sql
 
 Agrega `ingredientes.food_group`, su restriccion de valores, indice de consulta y una clasificacion inicial del catalogo sembrado.
 
+La procedencia nutricional y las cantidades base requieren:
+
+```txt
+migrations/010_recipe_nutrition_provenance.sql
+```
+
+Agrega porcion, numero de porciones, fuente y fecha de revision en recetas; cantidades y unidades en la relacion receta-ingrediente; e identificadores y nutrientes por 100 g en ingredientes. Los campos preparan un calculo auditable, pero la carga automatica desde USDA FoodData Central todavia no esta implementada.
+
 ### Ejecucion de migraciones
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
 
 ```bash
 npm run migrate:status
-npm run migrate -- 001 002 003 004 005 006 007 008 009
-npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009
+npm run migrate -- 001 002 003 004 005 006 007 008 009 010
+npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.

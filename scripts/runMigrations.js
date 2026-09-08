@@ -255,6 +255,19 @@ const assertMigration009 = async (client) => {
   await assertColumns(client, "009", { ingredientes: ["food_group"] });
 };
 
+const assertMigration010 = async (client) => {
+  await assertRelations(client, "010", ["idx_ingredientes_fdc_id"]);
+  await assertColumns(client, "010", {
+    recetas: ["serving_size_g", "servings", "nutrition_source", "nutrition_reviewed_at"],
+    receta_ingredientes: ["amount", "unit", "amount_g"],
+    ingredientes: [
+      "fdc_id", "calories_per_100g", "protein_per_100g", "carbs_per_100g",
+      "fat_per_100g", "saturated_fat_per_100g", "sugar_per_100g",
+      "fiber_per_100g", "sodium_mg_per_100g", "nutrition_source", "nutrition_reviewed_at"
+    ]
+  });
+};
+
 const migrationVerifiers = {
   "001": assertMigration001,
   "002": assertMigration002,
@@ -264,7 +277,8 @@ const migrationVerifiers = {
   "006": assertMigration006,
   "007": assertMigration007,
   "008": assertMigration008,
-  "009": assertMigration009
+  "009": assertMigration009,
+  "010": assertMigration010
 };
 
 const run = async () => {

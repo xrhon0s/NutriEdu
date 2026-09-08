@@ -449,6 +449,38 @@ const listVisionUsage = async (req, res) => {
 
 // ================= Recetas =================
 
+const recipeNutritionFields = [
+  "protein_g", "carbs_g", "fat_g", "saturated_fat_g",
+  "sugar_g", "fiber_g", "sodium_mg", "serving_size_g", "servings"
+];
+const recipeNutritionSources = new Set(["unknown", "manual", "usda_fdc", "calculated", "ai_estimate", "professional"]);
+
+const normalizeRecipeInput = (body) => {
+  const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
+  const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : "";
+  const numeric = {};
+  for (const field of ["calorias", "tiempo_preparacion", "nivel_salud", ...recipeNutritionFields]) {
+    const value = body[field];
+    numeric[field] = value === "" || value === null || value === undefined ? null : Number(value);
+    if (numeric[field] !== null && (!Number.isFinite(numeric[field]) || numeric[field] < 0)) return null;
+  }
+  const nivelSalud = numeric.nivel_salud ?? 3;
+  const servings = numeric.servings ?? 1;
+  const ingredientIds = Array.isArray(body.ingredients) ? body.ingredients.map(Number) : [];
+  if (
+    !nombre || nombre.length > 160 || descripcion.length > 2000
+    || !Number.isInteger(nivelSalud) || nivelSalud < 1 || nivelSalud > 5
+    || !Number.isFinite(servings) || servings <= 0
+    || (numeric.serving_size_g !== null && numeric.serving_size_g <= 0)
+    || (numeric.calorias !== null && (!Number.isInteger(numeric.calorias) || numeric.calorias <= 0))
+    || (numeric.tiempo_preparacion !== null && (!Number.isInteger(numeric.tiempo_preparacion) || numeric.tiempo_preparacion <= 0))
+    || ingredientIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
+  ) return null;
+  const nutritionSource = recipeNutritionSources.has(body.nutrition_source) ? body.nutrition_source : "unknown";
+  const ingredients = [...new Set(ingredientIds)];
+  return { nombre, descripcion: descripcion || null, ...numeric, nivel_salud: nivelSalud, servings, nutrition_source: nutritionSource, ingredients };
+};
+
 // Listar recetas con ingredientes
 const listRecipes = async (req, res) => {
   try {
@@ -459,7 +491,7 @@ const listRecipes = async (req, res) => {
     const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM recetas r ${where}`, params);
     params.push(limit, offset);
     const result = await pool.query(`
-      SELECT r.id, r.nombre, r.descripcion, r.calorias, r.tiempo_preparacion,
+      SELECT r.*,
         COALESCE(
           json_agg(json_build_object('id', i.id, 'nombre', i.nombre)) 
           FILTER (WHERE i.id IS NOT NULL), '[]'
@@ -482,28 +514,41 @@ const listRecipes = async (req, res) => {
 
 // Crear receta con ingredientes
 const createRecipe = async (req, res) => {
-  const { nombre, descripcion, calorias, tiempo_preparacion, ingredients } = req.body;
+  const input = normalizeRecipeInput(req.body);
+  if (!input) return res.status(400).json({ message: "Datos de receta invalidos" });
 
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
-      `INSERT INTO recetas(nombre, descripcion, calorias, tiempo_preparacion)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [nombre, descripcion, calorias, tiempo_preparacion]
+    await client.query("BEGIN");
+    const result = await client.query(
+      `INSERT INTO recetas(
+         nombre, descripcion, calorias, tiempo_preparacion, nivel_salud,
+         protein_g, carbs_g, fat_g, saturated_fat_g, sugar_g, fiber_g, sodium_mg,
+         serving_size_g, servings, nutrition_source, nutrition_reviewed_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+         CASE WHEN $15 = 'unknown' THEN NULL ELSE CURRENT_TIMESTAMP END
+       ) RETURNING *`,
+      [
+        input.nombre, input.descripcion, input.calorias, input.tiempo_preparacion, input.nivel_salud,
+        input.protein_g, input.carbs_g, input.fat_g, input.saturated_fat_g, input.sugar_g,
+        input.fiber_g, input.sodium_mg, input.serving_size_g, input.servings, input.nutrition_source
+      ]
     );
 
     const receta = result.rows[0];
 
     // Insertar ingredientes relacionados
-    if (ingredients?.length > 0) {
-      const values = ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
-      await pool.query(
+    if (input.ingredients.length > 0) {
+      const values = input.ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
+      await client.query(
         `INSERT INTO receta_ingredientes(receta_id, ingrediente_id) VALUES ${values}`,
-        [receta.id, ...ingredients.map(Number)]
+        [receta.id, ...input.ingredients]
       );
     }
 
     // Devolver receta con ingredientes
-    const recetaConIngredientes = await pool.query(`
+    const recetaConIngredientes = await client.query(`
       SELECT r.*,
         COALESCE(
           json_agg(json_build_object('id', i.id, 'nombre', i.nombre))
@@ -516,35 +561,58 @@ const createRecipe = async (req, res) => {
       GROUP BY r.id
     `, [receta.id]);
 
-    res.json(recetaConIngredientes.rows[0]);
+    await client.query("COMMIT");
+    res.status(201).json(recetaConIngredientes.rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error creando receta:", err);
     res.status(500).json({ error: "Ocurrió un error al guardar la receta" });
+  } finally {
+    client.release();
   }
 };
 
 // Actualizar receta con ingredientes
 const updateRecipe = async (req, res) => {
-  const { id } = req.params;
-  const { nombre, descripcion, calorias, tiempo_preparacion, ingredients } = req.body;
+  const id = Number(req.params.id);
+  const input = normalizeRecipeInput(req.body);
+  if (!Number.isSafeInteger(id) || id <= 0 || !input) return res.status(400).json({ message: "Datos de receta invalidos" });
 
+  const client = await pool.connect();
   try {
-    await pool.query(
-      `UPDATE recetas SET nombre=$1, descripcion=$2, calorias=$3, tiempo_preparacion=$4 WHERE id=$5`,
-      [nombre, descripcion, calorias, tiempo_preparacion, id]
+    await client.query("BEGIN");
+    const updateResult = await client.query(
+      `UPDATE recetas SET
+         nombre=$1, descripcion=$2, calorias=$3, tiempo_preparacion=$4, nivel_salud=$5,
+         protein_g=$6, carbs_g=$7, fat_g=$8, saturated_fat_g=$9, sugar_g=$10,
+         fiber_g=$11, sodium_mg=$12, serving_size_g=$13, servings=$14,
+         nutrition_source=$15,
+         nutrition_reviewed_at=CASE WHEN $15 = 'unknown' THEN NULL ELSE CURRENT_TIMESTAMP END
+       WHERE id=$16
+       RETURNING id`,
+      [
+        input.nombre, input.descripcion, input.calorias, input.tiempo_preparacion, input.nivel_salud,
+        input.protein_g, input.carbs_g, input.fat_g, input.saturated_fat_g, input.sugar_g,
+        input.fiber_g, input.sodium_mg, input.serving_size_g, input.servings,
+        input.nutrition_source, id
+      ]
     );
+    if (!updateResult.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Receta no encontrada" });
+    }
 
     // Borrar ingredientes actuales y agregar los nuevos
-    await pool.query(`DELETE FROM receta_ingredientes WHERE receta_id=$1`, [id]);
-    if (ingredients?.length > 0) {
-      const values = ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
-      await pool.query(
+    await client.query(`DELETE FROM receta_ingredientes WHERE receta_id=$1`, [id]);
+    if (input.ingredients.length > 0) {
+      const values = input.ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
+      await client.query(
         `INSERT INTO receta_ingredientes(receta_id, ingrediente_id) VALUES ${values}`,
-        [id, ...ingredients.map(Number)]
+        [id, ...input.ingredients]
       );
     }
 
-    const recetaConIngredientes = await pool.query(`
+    const recetaConIngredientes = await client.query(`
       SELECT r.*,
         COALESCE(
           json_agg(json_build_object('id', i.id, 'nombre', i.nombre))
@@ -557,10 +625,14 @@ const updateRecipe = async (req, res) => {
       GROUP BY r.id
     `, [id]);
 
+    await client.query("COMMIT");
     res.json(recetaConIngredientes.rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error actualizando receta:", err);
     res.status(500).json({ error: "Ocurrió un error al actualizar la receta" });
+  } finally {
+    client.release();
   }
 };
 

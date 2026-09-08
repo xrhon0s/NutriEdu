@@ -1,5 +1,6 @@
 const pool = require("../database/db");
 const { evaluateRecipeForUser } = require("../services/nutritionRuleService");
+const { getRecipeRecommendations } = require("../services/recommendationService");
 
 // ================= Recetas Seguras =================
 const getSafeRecipes = async (req, res) => {
@@ -31,28 +32,26 @@ const getSafeRecipes = async (req, res) => {
 const getRecommendedRecipes = async (req, res) => {
   try {
     const userId = req.user.id;
-
-    const result = await pool.query(
-      `SELECT r.*
-       FROM recetas r
-       WHERE r.id NOT IN (
-         SELECT ri.receta_id
-         FROM receta_ingredientes ri
-         JOIN ingrediente_restricciones ir ON ri.ingrediente_id = ir.ingrediente_id
-         JOIN usuario_restricciones ur ON ir.restriccion_id = ur.restriccion_id
-         WHERE ur.usuario_id = $1
-       )
-       ORDER BY nivel_salud DESC, calorias ASC`,
-      [userId]
-    );
-
-    // Retornar solo un subset para recomendaciones (3-5 recetas aleatorias)
-    const recommended = result.rows.sort(() => 0.5 - Math.random()).slice(0, 5);
-
-    res.json(recommended);
+    const result = await getRecipeRecommendations(pool, { userId, limit: 5, offset: 0 });
+    res.json(result.recipes);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error obteniendo recomendaciones" });
+  }
+};
+
+const getRankedRecommendations = async (req, res) => {
+  try {
+    const limit = req.query.limit === undefined ? 6 : Number(req.query.limit);
+    const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50 || !Number.isInteger(offset) || offset < 0) {
+      return res.status(400).json({ message: "Paginacion invalida" });
+    }
+    const result = await getRecipeRecommendations(pool, { userId: req.user.id, limit, offset });
+    return res.json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Error obteniendo recomendaciones personalizadas" });
   }
 };
 
@@ -318,6 +317,7 @@ const evaluateRecipe = async (req, res) => {
 module.exports = {
   getSafeRecipes,
   getRecommendedRecipes,
+  getRankedRecommendations,
   getRecipeById,
   getRecipeIngredients,
   checkRecipeSafety, 
