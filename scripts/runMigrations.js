@@ -268,6 +268,25 @@ const assertMigration010 = async (client) => {
   });
 };
 
+const assertMigration011 = async (client) => {
+  await assertRelations(client, "011", [
+    "recipe_catalog_imports",
+    "idx_recetas_external_key",
+    "idx_ingredientes_external_key",
+    "idx_recipe_catalog_imports_created",
+    "idx_recipe_catalog_imports_actor_created"
+  ]);
+  await assertColumns(client, "011", {
+    recetas: ["external_key", "nutrition_source_reference", "nutrition_reviewed_by"],
+    ingredientes: ["external_key", "nutrition_source_reference", "nutrition_reviewed_by"],
+    recipe_catalog_imports: [
+      "id", "imported_by", "schema_version", "payload_sha256",
+      "recipes_created", "recipes_updated", "ingredients_created",
+      "ingredients_updated", "report", "created_at"
+    ]
+  });
+};
+
 const migrationVerifiers = {
   "001": assertMigration001,
   "002": assertMigration002,
@@ -278,7 +297,8 @@ const migrationVerifiers = {
   "007": assertMigration007,
   "008": assertMigration008,
   "009": assertMigration009,
-  "010": assertMigration010
+  "010": assertMigration010,
+  "011": assertMigration011
 };
 
 const run = async () => {

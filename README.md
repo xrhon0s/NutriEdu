@@ -269,7 +269,9 @@ Sin `paginated=true`, el endpoint conserva el arreglo historico usado por el fro
 
 `POST /api/admin/recipes/template/validate` valida una receta canónica JSON antes de importarla. Requiere JWT administrativo y devuelve `errors` y `warnings` con ruta exacta, además de cobertura nutricional, `eligibilityReady` y `recommendationReady`. No escribe en la base de datos.
 
-La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): incluye tres hojas CSV y un ejemplo JSON aceptado por el validador. La guía integral vive en `docs/plantilla_catalogo_recetas.md` dentro del workspace general. La importación masiva e idempotente todavía es una fase posterior; las recetas individuales continúan creándose desde el panel administrativo.
+`POST /api/admin/recipes/import/preview` resuelve creaciones, actualizaciones, adopción segura de filas históricas y conflictos sin escribir. `POST /api/admin/recipes/import` repite esa resolución bajo un advisory lock, guarda ingredientes, recetas y cantidades en una sola transacción y registra la operación en `recipe_catalog_imports`. Repetir las mismas claves actualiza filas en vez de duplicarlas.
+
+La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): `example.catalog.json` es importable desde el panel y las tres hojas CSV sirven para preparación tabular. El parser CSV directo sigue pendiente. El archivo JSON admite hasta 2 MB, 200 recetas y 500 definiciones de ingredientes.
 
 ### Intake de imagenes de comida
 
@@ -646,14 +648,22 @@ migrations/010_recipe_nutrition_provenance.sql
 
 Agrega porcion, numero de porciones, fuente y fecha de revision en recetas; cantidades y unidades en la relacion receta-ingrediente; e identificadores y nutrientes por 100 g en ingredientes. Los campos preparan un calculo auditable, pero la carga automatica desde USDA FoodData Central todavia no esta implementada.
 
+La importacion idempotente requiere:
+
+```txt
+migrations/011_recipe_catalog_imports.sql
+```
+
+Agrega claves externas unicas, referencia y autor de revision nutricional en recetas e ingredientes. Tambien crea el ledger `recipe_catalog_imports` con hash del payload, actor, conteos y reporte de cada transaccion.
+
 ### Ejecucion de migraciones
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
 
 ```bash
 npm run migrate:status
-npm run migrate -- 001 002 003 004 005 006 007 008 009 010
-npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010
+npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011
+npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010 011
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.
@@ -667,10 +677,10 @@ Para mantener separadas las credenciales locales y de produccion, guarda tempora
 ```bash
 MIGRATION_ENV_FILE=.env.production.local npm run migrate:status
 MIGRATION_ENV_FILE=.env.production.local npm run migrate:baseline -- 001 002 003 004
-MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007 008 009
+MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007 008 009 010 011
 ```
 
-El ejemplo anterior supone que `001-004` ya existen y `005-009` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
+El ejemplo anterior supone que `001-004` ya existen y `005-011` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
 
 ## Verificacion rapida
 
@@ -687,7 +697,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen doce contratos automatizados para visión, límites de uso, documentos médicos, administración, credenciales, seguridad de recetas, recomendaciones y plantilla de catálogo, además del smoke autenticado `npm run test:clinical-smoke`.
+Existen trece contratos automatizados para visión, límites de uso, documentos médicos, administración, credenciales, seguridad de recetas, recomendaciones, plantilla e importación de catálogo. El smoke administrativo comprueba además preview, creación, actualización idempotente, cantidades y limpieza real contra PostgreSQL.
 
 ## Despliegue en Render
 

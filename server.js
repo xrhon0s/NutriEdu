@@ -31,7 +31,7 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/users", userRoutes);
@@ -41,6 +41,13 @@ app.use("/api/profile", profileRoutes);
 app.use("/api/food-analysis", foodAnalysisRoutes);
 app.use("/api/medical-documents", medicalDocumentRoutes);
 app.use("/api/notifications", notificationRoutes);
+
+app.use((error, _req, res, next) => {
+  if (error?.type === "entity.too.large") {
+    return res.status(413).json({ message: "El archivo JSON supera el limite de 2 MB" });
+  }
+  return next(error);
+});
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);

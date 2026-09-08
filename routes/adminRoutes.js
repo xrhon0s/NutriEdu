@@ -19,6 +19,9 @@ const {
   listIngredients,
   listRecipes,
   validateRecipeCatalogTemplate,
+  downloadRecipeCatalogTemplate,
+  previewRecipeCatalogImport,
+  executeRecipeCatalogImport,
   updateIngredient,
   updateRecipe
 } = require("../controllers/adminController");
@@ -42,7 +45,10 @@ router.post("/restrictions", saveRestrictionAdmin);
 router.patch("/restrictions/:id", saveRestrictionAdmin);
 router.get("/vision-usage", listVisionUsage);
 router.get("/recipes", listRecipes);
+router.get("/recipes/template/:file", downloadRecipeCatalogTemplate);
 router.post("/recipes/template/validate", validateRecipeCatalogTemplate);
+router.post("/recipes/import/preview", previewRecipeCatalogImport);
+router.post("/recipes/import", executeRecipeCatalogImport);
 router.get("/ingredients", listIngredients);
 router.post("/recipes", createRecipe);
 router.put("/recipes/:id", updateRecipe);

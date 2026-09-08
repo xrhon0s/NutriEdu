@@ -96,4 +96,9 @@ const validateRecipeTemplate = (input) => {
   };
 };
 
-module.exports = { validateRecipeTemplate };
+module.exports = {
+  EXTERNAL_KEY_PATTERN,
+  NUTRIENT_FIELDS,
+  NUTRITION_SOURCES,
+  validateRecipeTemplate
+};

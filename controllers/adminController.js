@@ -4,6 +4,7 @@ const path = require("path");
 const { getVisionProvider } = require("../services/vision");
 const { getVisionUsagePolicy } = require("../services/visionUsageService");
 const { validateRecipeTemplate } = require("../services/recipeCatalogTemplateService");
+const { buildRecipeCatalogPreview, importRecipeCatalog } = require("../services/recipeCatalogImportService");
 
 const getOperationsOverview = async (req, res) => {
   try {
@@ -455,6 +456,39 @@ const validateRecipeCatalogTemplate = (req, res) => {
   return res.status(result.valid ? 200 : 400).json(result);
 };
 
+const recipeCatalogTemplateFiles = {
+  catalog: "example.catalog.json",
+  recipe: "example.recipe.json",
+  recipes: "recipes.csv",
+  ingredients: "ingredients.csv",
+  relations: "recipe_ingredients.csv"
+};
+
+const downloadRecipeCatalogTemplate = (req, res) => {
+  const fileName = recipeCatalogTemplateFiles[req.params.file];
+  if (!fileName) return res.status(404).json({ message: "Plantilla no encontrada" });
+  return res.download(path.join(__dirname, "..", "templates", "recipe_catalog", fileName), fileName);
+};
+
+const previewRecipeCatalogImport = async (req, res) => {
+  try {
+    return res.json(await buildRecipeCatalogPreview(pool, req.body));
+  } catch (error) {
+    console.error("Error previsualizando catalogo de recetas:", error);
+    return res.status(500).json({ error: "Error previsualizando el catalogo" });
+  }
+};
+
+const executeRecipeCatalogImport = async (req, res) => {
+  try {
+    const result = await importRecipeCatalog(pool, req.body, req.user.id);
+    return res.status(result.imported ? 201 : 422).json(result);
+  } catch (error) {
+    console.error("Error importando catalogo de recetas:", error);
+    return res.status(500).json({ error: "Error importando el catalogo; no se aplicaron cambios" });
+  }
+};
+
 const recipeNutritionFields = [
   "protein_g", "carbs_g", "fat_g", "saturated_fat_g",
   "sugar_g", "fiber_g", "sodium_mg", "serving_size_g", "servings"
@@ -753,6 +787,9 @@ module.exports = {
   listVisionUsage,
   listRecipes,
   validateRecipeCatalogTemplate,
+  downloadRecipeCatalogTemplate,
+  previewRecipeCatalogImport,
+  executeRecipeCatalogImport,
   createRecipe,
   updateRecipe,
   deleteRecipe,

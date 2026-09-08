@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "1.0",
+  "ingredients": [
+    {
+      "externalKey": "chicken_breast",
+      "name": "pechuga de pollo",
+      "foodGroup": "protein",
+      "fdcId": null,
+      "nutritionPer100g": {
+        "calories": 165,
+        "proteinG": 31,
+        "carbsG": 0,
+        "fatG": 3.6,
+        "saturatedFatG": 1,
+        "sugarG": 0,
+        "fiberG": 0,
+        "sodiumMg": 74
+      },
+      "nutritionProvenance": {
+        "source": "manual",
+        "reference": "Ejemplo ilustrativo pendiente de verificacion"
+      }
+    },
+    {
+      "externalKey": "brown_rice",
+      "name": "arroz integral",
+      "foodGroup": "carbohydrate",
+      "fdcId": null,
+      "nutritionPer100g": {
+        "calories": 123,
+        "proteinG": 2.7,
+        "carbsG": 25.6,
+        "fatG": 1,
+        "saturatedFatG": 0.3,
+        "sugarG": 0.2,
+        "fiberG": 1.6,
+        "sodiumMg": 4
+      },
+      "nutritionProvenance": {
+        "source": "manual",
+        "reference": "Ejemplo ilustrativo pendiente de verificacion"
+      }
+    }
+  ],
+  "recipes": [
+    {
+      "schemaVersion": "1.0",
+      "externalKey": "chicken_rice_001",
+      "name": "Pollo con arroz",
+      "description": "Pollo a la plancha con arroz integral y vegetales",
+      "preparationMinutes": 35,
+      "healthLevel": 4,
+      "portion": { "servingSizeG": 420, "servings": 1 },
+      "nutritionPerServing": {
+        "calories": 540,
+        "proteinG": 42,
+        "carbsG": 58,
+        "fatG": 14,
+        "saturatedFatG": 3,
+        "sugarG": 5,
+        "fiberG": 8,
+        "sodiumMg": 480
+      },
+      "nutritionProvenance": {
+        "source": "manual",
+        "reference": "Ejemplo ilustrativo pendiente de verificacion"
+      },
+      "ingredients": [
+        { "externalKey": "chicken_breast", "name": "pechuga de pollo", "amount": 150, "unit": "g", "amountG": 150 },
+        { "externalKey": "brown_rice", "name": "arroz integral", "amount": 180, "unit": "g", "amountG": 180 }
+      ]
+    }
+  ]
+}
