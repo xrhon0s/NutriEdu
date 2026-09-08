@@ -660,6 +660,8 @@ Agrega claves externas unicas, referencia y autor de revision nutricional en rec
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
 
+Estado de produccion: las migraciones `001` a `011` fueron aplicadas, registradas y verificadas en Supabase el 8 de septiembre de 2026.
+
 ```bash
 npm run migrate:status
 npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011
