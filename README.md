@@ -662,6 +662,8 @@ El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock
 
 Estado de produccion: las migraciones `001` a `011` fueron aplicadas, registradas y verificadas en Supabase el 8 de septiembre de 2026.
 
+En desarrollo, `npm run dev` usa el modo watch integrado de Node y reinicia el backend cuando cambian sus modulos. Render conserva `npm start`, sin watch, como comando de produccion.
+
 ```bash
 npm run migrate:status
 npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011

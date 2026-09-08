@@ -26,7 +26,7 @@
     "migrate:baseline": "node scripts/runMigrations.js --baseline",
     "migrate:status": "node scripts/runMigrations.js --status",
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node --watch server.js"
   },
   "keywords": [],
   "author": "",
