@@ -374,6 +374,20 @@ Estados posibles:
 
 Las rutas de planificador requieren JWT y usan `req.user.id`.
 
+La lista conserva por defecto el arreglo histórico de ingredientes para no romper clientes mobile existentes. Web solicita `?detailed=true` y recibe:
+
+- ingredientes agrupables por `foodGroup`;
+- gramos conocidos y cantidades agregadas por unidad;
+- número de usos y recetas de origen;
+- cantidades incompletas declaradas explícitamente;
+- cantidad de comidas planificadas y `planSignature` determinista.
+
+La firma permite que cada cliente guarde el progreso de compra por usuario y versión del plan. El backend nunca inventa cantidades: cuando `receta_ingredientes` no tiene `amount_g` ni `amount`, incrementa `missingQuantityUses`.
+
+```bash
+npm run test:shopping-list
+```
+
 ### Perfil avanzado
 
 Las rutas de perfil avanzado requieren JWT y usan `req.user.id`.

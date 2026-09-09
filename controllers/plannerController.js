@@ -173,6 +173,85 @@ const getShoppingList = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    if (req.query.detailed === "true") {
+      const [itemsResult, planResult] = await Promise.all([
+        pool.query(
+          `WITH ingredient_uses AS (
+             SELECT i.id, i.nombre, i.food_group, ps.id AS plan_entry_id,
+               r.id AS recipe_id, r.nombre AS recipe_name,
+               ri.amount::float AS amount, NULLIF(BTRIM(ri.unit), '') AS unit,
+               ri.amount_g::float AS amount_g
+             FROM plan_semanal ps
+             JOIN recetas r ON ps.receta_id = r.id
+             JOIN receta_ingredientes ri ON ps.receta_id = ri.receta_id
+             JOIN ingredientes i ON ri.ingrediente_id = i.id
+             WHERE ps.usuario_id = $1
+           ), ingredient_totals AS (
+             SELECT id, nombre, food_group,
+               SUM(amount_g)::float AS known_amount_g,
+               COUNT(*)::int AS planned_uses,
+               COUNT(*) FILTER (WHERE amount_g IS NULL AND amount IS NULL)::int AS missing_quantity_uses,
+               COUNT(DISTINCT recipe_id)::int AS recipe_count,
+               ARRAY_AGG(DISTINCT recipe_name ORDER BY recipe_name) AS source_recipes
+             FROM ingredient_uses
+             GROUP BY id, nombre, food_group
+           )
+           SELECT totals.*,
+             COALESCE((
+               SELECT JSON_AGG(
+                 JSON_BUILD_OBJECT('amount', quantity.amount, 'unit', quantity.unit)
+                 ORDER BY quantity.unit
+               )
+               FROM (
+                 SELECT SUM(uses.amount)::float AS amount,
+                   COALESCE(uses.unit, 'unidad') AS unit
+                 FROM ingredient_uses uses
+                 WHERE uses.id = totals.id
+                   AND uses.amount IS NOT NULL
+                   AND uses.amount_g IS NULL
+                 GROUP BY COALESCE(uses.unit, 'unidad')
+               ) quantity
+             ), '[]'::json) AS quantities
+           FROM ingredient_totals totals
+           ORDER BY totals.food_group, totals.nombre`,
+          [userId]
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS planned_meals,
+             COALESCE(
+               MD5(STRING_AGG(
+                 CONCAT_WS(':', receta_id::text, dia_semana, tipo_comida),
+                 '|' ORDER BY dia_semana, tipo_comida, receta_id
+               )),
+               MD5('')
+             ) AS plan_signature
+           FROM plan_semanal
+           WHERE usuario_id = $1`,
+          [userId]
+        )
+      ]);
+
+      const items = itemsResult.rows.map((item) => ({
+        id: item.id,
+        nombre: item.nombre,
+        foodGroup: item.food_group || "other",
+        knownAmountG: item.known_amount_g,
+        plannedUses: item.planned_uses,
+        missingQuantityUses: item.missing_quantity_uses,
+        recipeCount: item.recipe_count,
+        sourceRecipes: item.source_recipes || [],
+        quantities: item.quantities || []
+      }));
+      const plan = planResult.rows[0];
+
+      return res.json({
+        items,
+        planSignature: plan.plan_signature,
+        plannedMeals: plan.planned_meals,
+        missingQuantityItems: items.filter((item) => item.missingQuantityUses > 0).length
+      });
+    }
+
     const result = await pool.query(
       `
       SELECT DISTINCT i.id, i.nombre
@@ -185,7 +264,7 @@ const getShoppingList = async (req, res) => {
       [userId]
     );
 
-    res.json(result.rows);
+    return res.json(result.rows);
 
   } catch (error) {
     console.error(error);
