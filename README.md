@@ -353,6 +353,8 @@ npm run test:clinical-smoke
 
 Los ingredientes no seguros se devuelven una sola vez por receta, incluso cuando el mismo ingrediente coincide con varias restricciones del usuario. Esto evita alertas, grupos de sustitutos y penalizaciones duplicadas. El contrato se verifica con:
 
+Las alternativas no se eligen de todo el catálogo ni solo por grupo nutricional. `ingredientes.substitution_group` representa una función culinaria específica: aves, pescados, carnes rojas, granos, tubérculos, grasas de cocción, etc. El endpoint únicamente devuelve candidatos seguros del mismo grupo, excluye ingredientes que ya están en la receta y no usa fallback para `other`. Por ejemplo, pollo no propone tofu; si no existe otra ave registrada, devuelve una lista vacía.
+
 ```bash
 npm run test:recipe-safety
 ```
@@ -460,7 +462,7 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `POST /api/admin/recipes`
 - `PUT /api/admin/recipes/:id`
 - `DELETE /api/admin/recipes/:id`
-- `GET /api/admin/ingredients?page=1&limit=15&search=&foodGroup=`
+- `GET /api/admin/ingredients?page=1&limit=15&search=&foodGroup=&substitutionGroup=`
 - `POST /api/admin/ingredients`
 - `PUT /api/admin/ingredients/:id`
 - `DELETE /api/admin/ingredients/:id`
@@ -484,7 +486,7 @@ La consulta de usuarios pagina y filtra por nombre, correo o rol sin devolver `p
 
 Las reglas nutricionales validan alcance, catalogo asociado, nutriente, tipo, limites y severidad mediante allowlists. Las restricciones se crean, editan y desactivan sin romper relaciones existentes. El detalle de IA muestra solicitudes, tokens, costos estimados y errores; la politica de limites es solo lectura porque sus valores pertenecen a la configuracion protegida del backend.
 
-Recetas, ingredientes y restricciones administrativas se consultan con paginacion y busqueda del lado del servidor. Los ingredientes admiten filtro y clasificacion por grupo alimentario. `GET /api/admin/ingredients?all=true` se reserva para selectores internos que necesitan el catalogo completo.
+Recetas, ingredientes y restricciones administrativas se consultan con paginacion y busqueda del lado del servidor. Los ingredientes admiten filtro y clasificacion por grupo alimentario y grupo de sustitucion culinaria. `GET /api/admin/ingredients?all=true` se reserva para selectores internos que necesitan el catalogo completo.
 
 El smoke administrativo local crea una cuenta temporal, prueba busqueda, catalogos, reglas, restricciones, uso de IA y cambio de rol, y elimina la cuenta al terminar:
 
@@ -656,18 +658,26 @@ migrations/011_recipe_catalog_imports.sql
 
 Agrega claves externas unicas, referencia y autor de revision nutricional en recetas e ingredientes. Tambien crea el ledger `recipe_catalog_imports` con hash del payload, actor, conteos y reporte de cada transaccion.
 
+La precisión de alternativas requiere:
+
+```txt
+migrations/012_ingredient_substitution_groups.sql
+```
+
+Agrega `ingredientes.substitution_group`, una taxonomía culinaria más específica que `food_group`, un índice parcial y la clasificación inicial del catálogo. La administración y la plantilla de importación permiten asignar este grupo a ingredientes futuros.
+
 ### Ejecucion de migraciones
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
 
-Estado de produccion: las migraciones `001` a `011` fueron aplicadas, registradas y verificadas en Supabase el 8 de septiembre de 2026.
+Estado de produccion: las migraciones `001` a `012` fueron aplicadas, registradas y verificadas en Supabase el 8 de septiembre de 2026.
 
 En desarrollo, `npm run dev` usa el modo watch integrado de Node y reinicia el backend cuando cambian sus modulos. Render conserva `npm start`, sin watch, como comando de produccion.
 
 ```bash
 npm run migrate:status
-npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011
-npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010 011
+npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011 012
+npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010 011 012
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.

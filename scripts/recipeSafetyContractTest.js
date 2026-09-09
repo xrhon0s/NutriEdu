@@ -1,16 +1,18 @@
 const assert = require("node:assert/strict");
 
-const unsafeIngredient = { id: 4, nombre: "pollo" };
+const unsafeIngredient = { id: 4, nombre: "pollo", food_group: "protein", substitution_group: "poultry" };
 let legacySafetyUsesDistinct = false;
+let substituteUsesCulinaryGroup = false;
 
 const fakePool = {
-  async query(sql) {
+  async query(sql, params) {
     if (sql.includes("FROM receta_ingredientes ri") && sql.includes("usuario_restricciones ur")) {
       legacySafetyUsesDistinct = /SELECT\s+DISTINCT\s+i\.id,\s*i\.nombre/i.test(sql);
       return { rows: [unsafeIngredient] };
     }
     if (sql.includes("FROM ingredientes i") && sql.includes("LIMIT 5")) {
-      return { rows: [{ id: 8, nombre: "tofu" }] };
+      substituteUsesCulinaryGroup = sql.includes("i.substitution_group = $3") && params[2] === "poultry";
+      return { rows: [{ id: 81, nombre: "pavo", food_group: "protein", substitution_group: "poultry" }] };
     }
     throw new Error(`Unexpected recipe safety query: ${sql}`);
   }
@@ -40,6 +42,9 @@ const run = async () => {
   assert.equal(legacySafetyUsesDistinct, true);
   assert.deepEqual(body.unsafeIngredients, [unsafeIngredient]);
   assert.equal(body.substitutes.length, 1);
+  assert.equal(substituteUsesCulinaryGroup, true);
+  assert.deepEqual(body.substitutes[0].opciones.map((item) => item.nombre), ["pavo"]);
+  assert.equal(body.substitutes[0].opciones.some((item) => item.nombre === "tofu"), false);
 
   let clinicalSafetyUsesDistinct = false;
   const clinicalPool = {
@@ -72,7 +77,9 @@ const run = async () => {
     ok: true,
     legacySafetyDeduplication: true,
     clinicalSafetyDeduplication: true,
-    substituteGroupsUnique: true
+    substituteGroupsUnique: true,
+    culinarySubstitutionGroupRequired: true,
+    arbitraryProteinFallbackRejected: true
   }, null, 2));
 };
 

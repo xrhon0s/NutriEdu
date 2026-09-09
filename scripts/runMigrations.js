@@ -287,6 +287,18 @@ const assertMigration011 = async (client) => {
   });
 };
 
+const assertMigration012 = async (client) => {
+  await assertRelations(client, "012", ["idx_ingredientes_substitution_group_name"]);
+  await assertColumns(client, "012", { ingredientes: ["substitution_group"] });
+
+  const chicken = await client.query(
+    "SELECT substitution_group FROM ingredientes WHERE LOWER(nombre) = 'pollo' LIMIT 1"
+  );
+  if (chicken.rows[0] && chicken.rows[0].substitution_group !== "poultry") {
+    throw new Error("Migration 012 verification failed: pollo must belong to poultry");
+  }
+};
+
 const migrationVerifiers = {
   "001": assertMigration001,
   "002": assertMigration002,
@@ -298,7 +310,8 @@ const migrationVerifiers = {
   "008": assertMigration008,
   "009": assertMigration009,
   "010": assertMigration010,
-  "011": assertMigration011
+  "011": assertMigration011,
+  "012": assertMigration012
 };
 
 const run = async () => {

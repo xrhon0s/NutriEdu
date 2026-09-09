@@ -5,6 +5,7 @@
       "externalKey": "chicken_breast",
       "name": "pechuga de pollo",
       "foodGroup": "protein",
+      "substitutionGroup": "poultry",
       "fdcId": null,
       "nutritionPer100g": {
         "calories": 165,
@@ -25,6 +26,7 @@
       "externalKey": "brown_rice",
       "name": "arroz integral",
       "foodGroup": "carbohydrate",
+      "substitutionGroup": "grain",
       "fdcId": null,
       "nutritionPer100g": {
         "calories": 123,

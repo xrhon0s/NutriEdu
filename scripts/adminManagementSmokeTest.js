@@ -87,6 +87,10 @@ const run = async () => {
 };
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
+  await pool.query(
+    "DELETE FROM receta_ingredientes WHERE receta_id IN (SELECT id FROM recetas WHERE external_key = $1)",
+    [importedRecipeKey]
+  ).catch(() => undefined);
   await pool.query("DELETE FROM recetas WHERE external_key = $1", [importedRecipeKey]).catch(() => undefined);
   await pool.query("DELETE FROM ingredientes WHERE external_key = ANY($1::text[])", [importedIngredientKeys]).catch(() => undefined);
   if (importIds.length) await pool.query("DELETE FROM recipe_catalog_imports WHERE id = ANY($1::bigint[])", [importIds]).catch(() => undefined);

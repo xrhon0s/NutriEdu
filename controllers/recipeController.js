@@ -98,7 +98,7 @@ const checkRecipeSafety = async (req, res) => {
 
     // Ingredientes no seguros
     const unsafeRes = await pool.query(
-      `SELECT DISTINCT i.id, i.nombre
+      `SELECT DISTINCT i.id, i.nombre, i.food_group, i.substitution_group
        FROM receta_ingredientes ri
        JOIN ingredientes i ON ri.ingrediente_id = i.id
        JOIN ingrediente_restricciones ir ON i.id = ir.ingrediente_id
@@ -109,11 +109,14 @@ const checkRecipeSafety = async (req, res) => {
     );
     const unsafeIngredients = unsafeRes.rows;
 
-    // Sustitutos (hasta 5) por ingrediente no seguro
+    // Solo se sugieren sustitutos con la misma función culinaria específica.
     const substitutes = await Promise.all(
       unsafeIngredients.map(async (ing) => {
+        if (!ing.substitution_group || ing.substitution_group === "other") {
+          return { ingredienteOriginal: ing.nombre, substitutionGroup: "other", opciones: [] };
+        }
         const subsRes = await pool.query(
-          `SELECT i.id, i.nombre
+          `SELECT i.id, i.nombre, i.food_group, i.substitution_group
            FROM ingredientes i
            WHERE i.id NOT IN (
              SELECT ingrediente_id
@@ -122,10 +125,19 @@ const checkRecipeSafety = async (req, res) => {
              WHERE ur.usuario_id = $1
            )
            AND i.id != $2
+           AND i.substitution_group = $3
+           AND i.id NOT IN (
+             SELECT ingrediente_id FROM receta_ingredientes WHERE receta_id = $4
+           )
+           ORDER BY i.nombre ASC
            LIMIT 5`,
-          [userId, ing.id]
+          [userId, ing.id, ing.substitution_group, recipeId]
         );
-        return { ingredienteOriginal: ing.nombre, opciones: subsRes.rows };
+        return {
+          ingredienteOriginal: ing.nombre,
+          substitutionGroup: ing.substitution_group,
+          opciones: subsRes.rows
+        };
       })
     );
 

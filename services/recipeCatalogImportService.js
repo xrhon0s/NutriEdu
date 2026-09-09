@@ -5,11 +5,7 @@ const {
   NUTRITION_SOURCES,
   validateRecipeTemplate
 } = require("./recipeCatalogTemplateService");
-
-const FOOD_GROUPS = new Set([
-  "protein", "carbohydrate", "vegetable", "fruit", "dairy",
-  "fat", "legume", "seasoning", "beverage", "other"
-]);
+const { FOOD_GROUP_SET, SUBSTITUTION_GROUP_SET } = require("./ingredientTaxonomy");
 const MAX_RECIPES = 200;
 const MAX_INGREDIENTS = 500;
 
@@ -50,7 +46,9 @@ const validateIngredientDefinition = (ingredient, index) => {
   }
   if (!EXTERNAL_KEY_PATTERN.test(ingredient.externalKey || "")) error("externalKey", "INVALID_EXTERNAL_KEY", "La clave externa no es valida.");
   if (typeof ingredient.name !== "string" || ingredient.name.trim().length < 2 || ingredient.name.trim().length > 160) error("name", "INVALID_NAME", "El nombre debe tener entre 2 y 160 caracteres.");
-  if (!FOOD_GROUPS.has(ingredient.foodGroup)) error("foodGroup", "INVALID_FOOD_GROUP", "El grupo alimentario no pertenece al catalogo permitido.");
+  if (!FOOD_GROUP_SET.has(ingredient.foodGroup)) error("foodGroup", "INVALID_FOOD_GROUP", "El grupo alimentario no pertenece al catalogo permitido.");
+  if (ingredient.substitutionGroup === undefined) warning("substitutionGroup", "MISSING_SUBSTITUTION_GROUP", "Sin grupo de sustitución no se sugerirán alternativas.");
+  else if (!SUBSTITUTION_GROUP_SET.has(ingredient.substitutionGroup)) error("substitutionGroup", "INVALID_SUBSTITUTION_GROUP", "El grupo de sustitución no pertenece al catálogo permitido.");
   if (ingredient.fdcId !== null && ingredient.fdcId !== undefined && (!Number.isSafeInteger(ingredient.fdcId) || ingredient.fdcId <= 0)) error("fdcId", "INVALID_FDC_ID", "fdcId debe ser un entero positivo.");
 
   const nutrition = ingredient.nutritionPer100g;
@@ -235,32 +233,33 @@ const upsertIngredient = async (client, ingredient, action, userId) => {
   const nutrition = ingredient.nutritionPer100g || {};
   const provenance = ingredient.nutritionProvenance;
   const values = [
-    ingredient.externalKey, ingredient.name.trim(), ingredient.foodGroup, ingredient.fdcId || null,
+    ingredient.externalKey, ingredient.name.trim(), ingredient.foodGroup,
+    ingredient.substitutionGroup || "other", ingredient.fdcId || null,
     ...Object.keys(INGREDIENT_NUTRIENTS).map((key) => finiteOrNull(nutrition[key])),
     provenance.source, provenance.reference?.trim() || null, userId
   ];
   if (action.existingId) {
     await client.query(
-      `UPDATE ingredientes SET external_key=$1, nombre=$2, food_group=$3, fdc_id=$4,
-       calories_per_100g=$5, protein_per_100g=$6, carbs_per_100g=$7, fat_per_100g=$8,
-       saturated_fat_per_100g=$9, sugar_per_100g=$10, fiber_per_100g=$11,
-       sodium_mg_per_100g=$12, nutrition_source=$13::varchar, nutrition_source_reference=$14,
-       nutrition_reviewed_by=CASE WHEN $13::varchar='unknown'::varchar THEN NULL ELSE $15::integer END,
-       nutrition_reviewed_at=CASE WHEN $13::varchar='unknown'::varchar THEN NULL ELSE CURRENT_TIMESTAMP END
-       WHERE id=$16`,
+      `UPDATE ingredientes SET external_key=$1, nombre=$2, food_group=$3, substitution_group=$4, fdc_id=$5,
+       calories_per_100g=$6, protein_per_100g=$7, carbs_per_100g=$8, fat_per_100g=$9,
+       saturated_fat_per_100g=$10, sugar_per_100g=$11, fiber_per_100g=$12,
+       sodium_mg_per_100g=$13, nutrition_source=$14::varchar, nutrition_source_reference=$15,
+       nutrition_reviewed_by=CASE WHEN $14::varchar='unknown'::varchar THEN NULL ELSE $16::integer END,
+       nutrition_reviewed_at=CASE WHEN $14::varchar='unknown'::varchar THEN NULL ELSE CURRENT_TIMESTAMP END
+       WHERE id=$17`,
       [...values, action.existingId]
     );
     return action.existingId;
   }
   const result = await client.query(
     `INSERT INTO ingredientes (
-       external_key, nombre, food_group, fdc_id, calories_per_100g, protein_per_100g,
+       external_key, nombre, food_group, substitution_group, fdc_id, calories_per_100g, protein_per_100g,
        carbs_per_100g, fat_per_100g, saturated_fat_per_100g, sugar_per_100g,
        fiber_per_100g, sodium_mg_per_100g, nutrition_source, nutrition_source_reference,
        nutrition_reviewed_by, nutrition_reviewed_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::varchar,$14,
-       CASE WHEN $13::varchar='unknown'::varchar THEN NULL ELSE $15::integer END,
-       CASE WHEN $13::varchar='unknown'::varchar THEN NULL ELSE CURRENT_TIMESTAMP END)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::varchar,$15,
+       CASE WHEN $14::varchar='unknown'::varchar THEN NULL ELSE $16::integer END,
+       CASE WHEN $14::varchar='unknown'::varchar THEN NULL ELSE CURRENT_TIMESTAMP END)
      RETURNING id`,
     values
   );

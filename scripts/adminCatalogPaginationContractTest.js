@@ -5,10 +5,11 @@ const fakePool = {
     if (sql.includes("COUNT(*)::int AS total FROM recetas")) return { rows: [{ total: 18 }] };
     if (sql.includes("json_agg") && sql.includes("LIMIT")) return { rows: [{ id: 8, nombre: "Sopa", ingredients: [] }] };
     if (sql.includes("COUNT(*)::int AS total FROM ingredientes")) return { rows: [{ total: 22 }] };
-    if (sql.includes("SELECT id, nombre, food_group FROM ingredientes") && sql.includes("LIMIT")) {
+    if (sql.includes("SELECT id, nombre, food_group, substitution_group FROM ingredientes") && sql.includes("LIMIT")) {
       assert.equal(params[0], "%pollo%");
       assert.equal(params[1], "protein");
-      return { rows: [{ id: 4, nombre: "pollo", food_group: "protein" }] };
+      assert.equal(params[2], "poultry");
+      return { rows: [{ id: 4, nombre: "pollo", food_group: "protein", substitution_group: "poultry" }] };
     }
     throw new Error(`Unexpected catalog pagination query: ${sql}`);
   }
@@ -30,11 +31,12 @@ const run = async () => {
   assert.equal(recipes.body.pagination.page, 2);
   assert.equal(recipes.body.pagination.totalPages, 4);
 
-  const ingredients = await invoke(listIngredients, { query: { page: "1", limit: "10", search: "pollo", foodGroup: "protein" } });
+  const ingredients = await invoke(listIngredients, { query: { page: "1", limit: "10", search: "pollo", foodGroup: "protein", substitutionGroup: "poultry" } });
   assert.equal(ingredients.body.pagination.totalPages, 3);
   assert.equal(ingredients.body.items[0].food_group, "protein");
+  assert.equal(ingredients.body.items[0].substitution_group, "poultry");
 
-  const invalidGroup = await invoke(createIngredient, { body: { nombre: "nuevo", foodGroup: "vitamin" } });
+  const invalidGroup = await invoke(createIngredient, { body: { nombre: "nuevo", foodGroup: "vitamin", substitutionGroup: "other" } });
   assert.equal(invalidGroup.status, 400);
   console.log(JSON.stringify({ ok: true, recipePagination: true, recipeSearch: true, ingredientPagination: true, ingredientSearch: true, foodGroupAllowlist: true }, null, 2));
 };
