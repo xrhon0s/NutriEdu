@@ -21,6 +21,16 @@ const fakePool = {
     if (sql.includes("AS analyses")) {
       return { rows: [{ analyses: 4, succeeded: 3, failed: 1, pending: 0, committed_usd: "0.0123" }] };
     }
+    if (sql.includes("AS nutrition_complete_recipes")) {
+      return { rows: [{
+        nutrition_complete_recipes: 27,
+        nutrition_reviewed_recipes: 18,
+        ingredient_relations: 120,
+        quantified_ingredient_relations: 90,
+        categorized_ingredients: 20,
+        substitution_ready_ingredients: 16
+      }] };
+    }
     if (sql.includes("to_regclass")) return { rows: [{ migration_table: null }] };
     throw new Error(`Unexpected admin overview query: ${sql}`);
   }
@@ -40,6 +50,11 @@ const response = {
 getOperationsOverview({}, response).then(() => {
   assert.equal(responseStatus, 200);
   assert.equal(responseBody.counts.profileCoveragePercent, 70);
+  assert.equal(responseBody.catalogQuality.nutritionCompletePercent, 75);
+  assert.equal(responseBody.catalogQuality.nutritionReviewedPercent, 50);
+  assert.equal(responseBody.catalogQuality.quantifiedIngredientsPercent, 75);
+  assert.equal(responseBody.catalogQuality.categorizedIngredientsPercent, 83);
+  assert.equal(responseBody.catalogQuality.substitutionReadyPercent, 67);
   assert.equal(responseBody.vision.configured, false);
   assert.equal(responseBody.vision.committedUsd, 0.0123);
   assert.equal(responseBody.vision.monthlyBudgetUsd, 5);

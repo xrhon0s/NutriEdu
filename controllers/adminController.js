@@ -9,7 +9,7 @@ const { FOOD_GROUPS, SUBSTITUTION_GROUPS } = require("../services/ingredientTaxo
 
 const getOperationsOverview = async (req, res) => {
   try {
-    const [countsResult, usageResult, migrationTableResult] = await Promise.all([
+    const [countsResult, qualityResult, usageResult, migrationTableResult] = await Promise.all([
       pool.query(`
         SELECT
           (SELECT COUNT(*) FROM usuarios)::int AS users,
@@ -21,6 +21,26 @@ const getOperationsOverview = async (req, res) => {
           (SELECT COUNT(*) FROM condiciones_clinicas WHERE is_active)::int AS active_conditions,
           (SELECT COUNT(*) FROM reglas_nutricionales WHERE is_active)::int AS active_rules,
           (SELECT COUNT(*) FROM notifications WHERE read_at IS NULL)::int AS unread_notifications
+      `),
+      pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM recetas
+            WHERE calorias IS NOT NULL
+              AND protein_g IS NOT NULL
+              AND carbs_g IS NOT NULL
+              AND fat_g IS NOT NULL
+              AND saturated_fat_g IS NOT NULL
+              AND sugar_g IS NOT NULL
+              AND fiber_g IS NOT NULL
+              AND sodium_mg IS NOT NULL)::int AS nutrition_complete_recipes,
+          (SELECT COUNT(*) FROM recetas
+            WHERE nutrition_source <> 'unknown'
+              AND nutrition_reviewed_at IS NOT NULL)::int AS nutrition_reviewed_recipes,
+          (SELECT COUNT(*) FROM receta_ingredientes)::int AS ingredient_relations,
+          (SELECT COUNT(*) FROM receta_ingredientes
+            WHERE amount_g IS NOT NULL OR amount IS NOT NULL)::int AS quantified_ingredient_relations,
+          (SELECT COUNT(*) FROM ingredientes WHERE food_group <> 'other')::int AS categorized_ingredients,
+          (SELECT COUNT(*) FROM ingredientes WHERE substitution_group <> 'other')::int AS substitution_ready_ingredients
       `),
       pool.query(`
         SELECT
@@ -47,6 +67,7 @@ const getOperationsOverview = async (req, res) => {
       : [];
     const recordedByVersion = new Map(recordedMigrations.map((migration) => [migration.version, migration]));
     const counts = countsResult.rows[0];
+    const quality = qualityResult.rows[0];
     const usage = usageResult.rows[0];
     const policy = getVisionUsagePolicy();
     const provider = getVisionProvider();
@@ -64,6 +85,29 @@ const getOperationsOverview = async (req, res) => {
         activeConditions: counts.active_conditions,
         activeRules: counts.active_rules,
         unreadNotifications: counts.unread_notifications
+      },
+      catalogQuality: {
+        nutritionCompleteRecipes: quality.nutrition_complete_recipes,
+        nutritionCompletePercent: counts.recipes
+          ? Math.round((quality.nutrition_complete_recipes / counts.recipes) * 100)
+          : 0,
+        nutritionReviewedRecipes: quality.nutrition_reviewed_recipes,
+        nutritionReviewedPercent: counts.recipes
+          ? Math.round((quality.nutrition_reviewed_recipes / counts.recipes) * 100)
+          : 0,
+        ingredientRelations: quality.ingredient_relations,
+        quantifiedIngredientRelations: quality.quantified_ingredient_relations,
+        quantifiedIngredientsPercent: quality.ingredient_relations
+          ? Math.round((quality.quantified_ingredient_relations / quality.ingredient_relations) * 100)
+          : 0,
+        categorizedIngredients: quality.categorized_ingredients,
+        categorizedIngredientsPercent: counts.ingredients
+          ? Math.round((quality.categorized_ingredients / counts.ingredients) * 100)
+          : 0,
+        substitutionReadyIngredients: quality.substitution_ready_ingredients,
+        substitutionReadyPercent: counts.ingredients
+          ? Math.round((quality.substitution_ready_ingredients / counts.ingredients) * 100)
+          : 0
       },
       vision: {
         configured: Boolean(provider),

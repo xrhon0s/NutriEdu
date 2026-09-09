@@ -494,7 +494,7 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `PATCH /api/admin/restrictions/:id`
 - `GET /api/admin/vision-usage?page=1&limit=20&status=&search=`
 
-`overview` devuelve un resumen operativo agregado: usuarios, cobertura de perfiles, volumen de catalogos, notificaciones sin leer, consumo y presupuesto de vision, proveedor configurado y estado del ledger de migraciones. No devuelve filas de usuarios, documentos clinicos, tokens ni secretos.
+`overview` devuelve un resumen operativo agregado: usuarios, cobertura de perfiles, volumen de catalogos, notificaciones sin leer, consumo y presupuesto de vision, proveedor configurado y estado del ledger de migraciones. Tambien incluye `catalogQuality`, con cobertura de ocho nutrientes por receta, revision nutricional, relaciones receta-ingrediente cuantificadas, grupos alimentarios y grupos de sustitucion. No devuelve filas de usuarios, documentos clinicos, tokens ni secretos.
 
 La consulta de usuarios pagina y filtra por nombre, correo o rol sin devolver `password_hash`. El cambio de rol es transaccional y no permite degradar al ultimo administrador. Los catalogos admitidos son `goals` y `conditions`; sus codigos se validan mediante allowlist de formato y los elementos se desactivan para conservar relaciones historicas.
 
