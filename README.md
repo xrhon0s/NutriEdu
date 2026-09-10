@@ -710,6 +710,22 @@ MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007 008 009 
 
 El ejemplo anterior supone que `001-004` ya existen y `005-011` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
 
+### Sincronizar un perfil entre desarrollo y produccion
+
+PostgreSQL local y Supabase son ambientes separados. Guardar un perfil desde una web conectada a `localhost` no modifica automaticamente la cuenta de produccion usada por mobile. Para trasladar el perfil del mismo usuario mediante APIs autenticadas, inicia primero el backend local y ejecuta una vista previa:
+
+```bash
+npm run sync:profile -- --email usuario@correo.com
+```
+
+La herramienta pide la contrasena sin mostrarla, comprueba que la cuenta exista en ambos ambientes y resume perfil, objetivos, condiciones, metas, restricciones y las seis primeras recomendaciones. No escribe nada sin `--apply`:
+
+```bash
+npm run sync:profile -- --email usuario@correo.com --apply
+```
+
+Las restricciones se relacionan por nombre normalizado, no por ID, porque los identificadores pueden diferir entre bases. Despues de aplicar, la herramienta vuelve a consultar produccion y muestra las recomendaciones resultantes. No guarda credenciales, tokens ni datos medicos en archivos.
+
 ## Verificacion rapida
 
 ```bash
@@ -725,7 +741,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen trece contratos automatizados para visión, límites de uso, documentos médicos, administración, credenciales, seguridad de recetas, recomendaciones, plantilla e importación de catálogo. El smoke administrativo comprueba además preview, creación, actualización idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen quince contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, plantilla, importacion de catalogo, compras y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 ## Despliegue en Render
 
