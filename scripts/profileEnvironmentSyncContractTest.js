@@ -3,6 +3,7 @@ const {
   mapRestrictionIds,
   normalizeName,
   parseArguments,
+  partitionPlanBySafety,
   selectTargetRecipeId,
   summarizeSnapshot,
 } = require("./syncProfileBetweenApis");
@@ -21,6 +22,20 @@ assert.deepStrictEqual(
 assert.throws(
   () => parseArguments(["--source", "https://same/api", "--target", "https://same/api"]),
   /ambientes diferentes/,
+);
+
+assert.deepStrictEqual(
+  partitionPlanBySafety(
+    [
+      { recetaId: 4, diaSemana: "Lunes", tipoComida: "Almuerzo", recipeName: "Receta segura" },
+      { recetaId: 9, diaSemana: "Martes", tipoComida: "Cena", recipeName: "Receta incompatible" },
+    ],
+    [{ id: 4 }],
+  ),
+  {
+    compatible: [{ recetaId: 4, diaSemana: "Lunes", tipoComida: "Almuerzo" }],
+    skipped: [{ recipe: "Receta incompatible", day: "Martes", meal: "Cena" }],
+  },
 );
 
 const mapping = mapRestrictionIds(
@@ -73,4 +88,5 @@ console.log(JSON.stringify({
   recommendationSummaryIncluded: true,
   weeklyPlanMappingIncluded: true,
   shoppingListVerificationIncluded: true,
+  unsafePlanEntriesSkipped: true,
 }, null, 2));
