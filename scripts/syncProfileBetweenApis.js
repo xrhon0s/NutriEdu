@@ -67,11 +67,13 @@ const login = async (baseUrl, email, password) => request(baseUrl, "/users/login
 });
 
 const loadSnapshot = async (baseUrl, auth) => {
-  const [profile, restrictionCatalog, userRestrictions, recommendations] = await Promise.all([
+  const [profile, restrictionCatalog, userRestrictions, recommendations, plan, shoppingList] = await Promise.all([
     request(baseUrl, "/profile", { token: auth.token }),
     request(baseUrl, "/users/restrictions", { token: auth.token }),
     request(baseUrl, `/users/restrictions/${auth.user.id}`, { token: auth.token }),
     request(baseUrl, "/recipes/recommendations?limit=6&offset=0", { token: auth.token }),
+    request(baseUrl, `/planner/${auth.user.id}`, { token: auth.token }),
+    request(baseUrl, `/planner/${auth.user.id}/shopping-list?detailed=true`, { token: auth.token }),
   ]);
 
   return {
@@ -79,6 +81,8 @@ const loadSnapshot = async (baseUrl, auth) => {
     restrictionCatalog: restrictionCatalog.restrictions || [],
     selectedRestrictions: userRestrictions.restrictions || [],
     recommendations: recommendations.recipes || [],
+    plan: Array.isArray(plan) ? plan : [],
+    shoppingList: shoppingList || { items: [], plannedMeals: 0 },
   };
 };
 
@@ -96,6 +100,44 @@ const mapRestrictionIds = (selectedRestrictions, targetCatalog) => {
   return { ids: [...new Set(ids)], missing };
 };
 
+const selectTargetRecipeId = (sourceMeal, directRecipe, searchRecipes = []) => {
+  const sourceName = normalizeName(sourceMeal.receta_nombre);
+  if (directRecipe && normalizeName(directRecipe.nombre) === sourceName) {
+    return Number(directRecipe.id);
+  }
+
+  const exactMatch = searchRecipes.find((recipe) => normalizeName(recipe.nombre) === sourceName);
+  if (exactMatch) return Number(exactMatch.id);
+  throw new Error(`La receta "${sourceMeal.receta_nombre}" no existe en el ambiente destino`);
+};
+
+const resolveTargetPlan = async (targetUrl, targetAuth, sourcePlan) => Promise.all(
+  sourcePlan.map(async (meal) => {
+    let directRecipe = null;
+    try {
+      directRecipe = await request(targetUrl, `/recipes/${meal.receta_id}`, { token: targetAuth.token });
+    } catch {
+      directRecipe = null;
+    }
+
+    let searchRecipes = [];
+    if (!directRecipe || normalizeName(directRecipe.nombre) !== normalizeName(meal.receta_nombre)) {
+      const search = await request(
+        targetUrl,
+        `/recipes/search/${targetAuth.user.id}?query=${encodeURIComponent(meal.receta_nombre)}&paginated=true&limit=50&offset=0`,
+        { token: targetAuth.token },
+      );
+      searchRecipes = search.recipes || [];
+    }
+
+    return {
+      recetaId: selectTargetRecipeId(meal, directRecipe, searchRecipes),
+      diaSemana: meal.dia_semana,
+      tipoComida: meal.tipo_comida,
+    };
+  }),
+);
+
 const summarizeSnapshot = (snapshot) => ({
   personalProfile: Boolean(snapshot.profile.profile),
   goals: snapshot.profile.goals?.map((item) => item.code) || [],
@@ -107,6 +149,16 @@ const summarizeSnapshot = (snapshot) => ({
     name: item.nombre,
     score: item.recommendation?.score ?? null,
   })),
+  plan: snapshot.plan.map((meal) => ({
+    day: meal.dia_semana,
+    meal: meal.tipo_comida,
+    recipeId: meal.receta_id,
+    recipe: meal.receta_nombre,
+  })),
+  shoppingList: {
+    plannedMeals: snapshot.shoppingList.plannedMeals || 0,
+    ingredients: snapshot.shoppingList.items?.length || 0,
+  },
 });
 
 const syncSnapshot = async (targetUrl, targetAuth, sourceSnapshot, targetSnapshot) => {
@@ -143,6 +195,13 @@ const syncSnapshot = async (targetUrl, targetAuth, sourceSnapshot, targetSnapsho
     method: "POST",
     token: targetAuth.token,
     body: { restricciones: restrictionMapping.ids },
+  });
+
+  const targetPlan = await resolveTargetPlan(targetUrl, targetAuth, sourceSnapshot.plan);
+  await request(targetUrl, "/planner", {
+    method: "POST",
+    token: targetAuth.token,
+    body: { plan: targetPlan },
   });
 };
 
@@ -220,7 +279,7 @@ const main = async () => {
   console.log(JSON.stringify(summarizeSnapshot(targetSnapshot), null, 2));
 
   if (!options.apply) {
-    console.log("\nVista previa completada. Repite con --apply para copiar el perfil.");
+    console.log("\nVista previa completada. Repite con --apply para copiar el perfil y el plan semanal.");
     return;
   }
 
@@ -238,4 +297,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { mapRestrictionIds, normalizeName, parseArguments, summarizeSnapshot };
+module.exports = {
+  mapRestrictionIds,
+  normalizeName,
+  parseArguments,
+  selectTargetRecipeId,
+  summarizeSnapshot,
+};

@@ -718,13 +718,13 @@ PostgreSQL local y Supabase son ambientes separados. Guardar un perfil desde una
 npm run sync:profile -- --email usuario@correo.com
 ```
 
-La herramienta pide la contrasena sin mostrarla, comprueba que la cuenta exista en ambos ambientes y resume perfil, objetivos, condiciones, metas, restricciones y las seis primeras recomendaciones. No escribe nada sin `--apply`:
+La herramienta pide la contrasena sin mostrarla, comprueba que la cuenta exista en ambos ambientes y resume perfil, objetivos, condiciones, metas, restricciones, plan semanal, lista de compras y las seis primeras recomendaciones. No escribe nada sin `--apply`:
 
 ```bash
 npm run sync:profile -- --email usuario@correo.com --apply
 ```
 
-Las restricciones se relacionan por nombre normalizado, no por ID, porque los identificadores pueden diferir entre bases. Despues de aplicar, la herramienta vuelve a consultar produccion y muestra las recomendaciones resultantes. No guarda credenciales, tokens ni datos medicos en archivos.
+Las restricciones se relacionan por nombre normalizado, no por ID. Las recetas del plan se comprueban primero por ID y nombre; si los IDs difieren, se resuelven por nombre exacto en el catalogo de destino. Despues de aplicar, la herramienta vuelve a consultar produccion y muestra las recomendaciones y la lista de compras resultantes. No guarda credenciales, tokens ni datos medicos en archivos.
 
 ## Verificacion rapida
 
