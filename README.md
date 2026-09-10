@@ -724,7 +724,7 @@ La herramienta pide la contrasena sin mostrarla, comprueba que la cuenta exista 
 npm run sync:profile -- --email usuario@correo.com --apply
 ```
 
-Las restricciones se relacionan por nombre normalizado, no por ID. Las recetas del plan se comprueban primero por ID y nombre; si los IDs difieren, se resuelven por nombre exacto en el catalogo de destino. Despues de aplicar, la herramienta vuelve a consultar produccion y muestra las recomendaciones y la lista de compras resultantes. No guarda credenciales, tokens ni datos medicos en archivos.
+Las restricciones se relacionan por nombre normalizado, no por ID. Las recetas del plan se comprueban primero por ID y nombre; si los IDs difieren, se resuelven por nombre exacto en el catalogo de destino. Una comida incompatible con las restricciones copiadas se omite y se reporta para reemplazarla desde el planificador, sin cancelar la sincronizacion completa ni debilitar la validacion del backend. Despues de aplicar, la herramienta vuelve a consultar produccion y muestra las recomendaciones y la lista de compras resultantes. No guarda credenciales, tokens ni datos medicos en archivos.
 
 ## Verificacion rapida
 

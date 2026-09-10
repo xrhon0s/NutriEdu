@@ -134,9 +134,34 @@ const resolveTargetPlan = async (targetUrl, targetAuth, sourcePlan) => Promise.a
       recetaId: selectTargetRecipeId(meal, directRecipe, searchRecipes),
       diaSemana: meal.dia_semana,
       tipoComida: meal.tipo_comida,
+      recipeName: meal.receta_nombre,
     };
   }),
 );
+
+const partitionPlanBySafety = (resolvedPlan, safeRecipes) => {
+  const safeRecipeIds = new Set(safeRecipes.map((recipe) => Number(recipe.id)));
+  const compatible = [];
+  const skipped = [];
+
+  for (const meal of resolvedPlan) {
+    if (!safeRecipeIds.has(Number(meal.recetaId))) {
+      skipped.push({
+        recipe: meal.recipeName,
+        day: meal.diaSemana,
+        meal: meal.tipoComida,
+      });
+      continue;
+    }
+    compatible.push({
+      recetaId: meal.recetaId,
+      diaSemana: meal.diaSemana,
+      tipoComida: meal.tipoComida,
+    });
+  }
+
+  return { compatible, skipped };
+};
 
 const summarizeSnapshot = (snapshot) => ({
   personalProfile: Boolean(snapshot.profile.profile),
@@ -166,6 +191,7 @@ const syncSnapshot = async (targetUrl, targetAuth, sourceSnapshot, targetSnapsho
   if (restrictionMapping.missing.length) {
     throw new Error(`Restricciones ausentes en destino: ${restrictionMapping.missing.join(", ")}`);
   }
+  const resolvedTargetPlan = await resolveTargetPlan(targetUrl, targetAuth, sourceSnapshot.plan);
 
   if (sourceSnapshot.profile.profile) {
     await request(targetUrl, "/profile", {
@@ -197,12 +223,20 @@ const syncSnapshot = async (targetUrl, targetAuth, sourceSnapshot, targetSnapsho
     body: { restricciones: restrictionMapping.ids },
   });
 
-  const targetPlan = await resolveTargetPlan(targetUrl, targetAuth, sourceSnapshot.plan);
+  const safeRecipes = await request(targetUrl, `/recipes/safe/${targetAuth.user.id}`, {
+    token: targetAuth.token,
+  });
+  const targetPlan = partitionPlanBySafety(resolvedTargetPlan, safeRecipes);
+  if (targetPlan.skipped.length) {
+    console.warn("\nComidas omitidas por incompatibilidad con las restricciones:");
+    console.warn(JSON.stringify(targetPlan.skipped, null, 2));
+  }
   await request(targetUrl, "/planner", {
     method: "POST",
     token: targetAuth.token,
-    body: { plan: targetPlan },
+    body: { plan: targetPlan.compatible },
   });
+  return targetPlan;
 };
 
 const printHelp = () => {
@@ -283,10 +317,13 @@ const main = async () => {
     return;
   }
 
-  await syncSnapshot(options.target, targetAuth, sourceSnapshot, targetSnapshot);
+  const planResult = await syncSnapshot(options.target, targetAuth, sourceSnapshot, targetSnapshot);
   const verifiedSnapshot = await loadSnapshot(options.target, targetAuth);
   console.log("\nDestino despues de sincronizar:");
   console.log(JSON.stringify(summarizeSnapshot(verifiedSnapshot), null, 2));
+  if (planResult.skipped.length) {
+    console.log(`\n${planResult.skipped.length} comida(s) incompatible(s) no se copiaron. Reemplazalas desde el planificador.`);
+  }
   console.log("\nSincronizacion completada. Web productiva y mobile leeran estos mismos datos.");
 };
 
@@ -301,6 +338,7 @@ module.exports = {
   mapRestrictionIds,
   normalizeName,
   parseArguments,
+  partitionPlanBySafety,
   selectTargetRecipeId,
   summarizeSnapshot,
 };
