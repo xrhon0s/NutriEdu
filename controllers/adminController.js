@@ -1,12 +1,583 @@
 const pool = require("../database/db");
+const fs = require("fs");
+const path = require("path");
+const { getVisionProvider } = require("../services/vision");
+const { getVisionUsagePolicy } = require("../services/visionUsageService");
+const { validateRecipeTemplate } = require("../services/recipeCatalogTemplateService");
+const { buildRecipeCatalogPreview, importRecipeCatalog } = require("../services/recipeCatalogImportService");
+const { FOOD_GROUPS, SUBSTITUTION_GROUPS } = require("../services/ingredientTaxonomy");
+
+const getOperationsOverview = async (req, res) => {
+  try {
+    const [countsResult, qualityResult, usageResult, migrationTableResult] = await Promise.all([
+      pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM usuarios)::int AS users,
+          (SELECT COUNT(*) FROM perfiles_usuario)::int AS profiles,
+          (SELECT COUNT(*) FROM recetas)::int AS recipes,
+          (SELECT COUNT(*) FROM ingredientes)::int AS ingredients,
+          (SELECT COUNT(*) FROM restricciones)::int AS restrictions,
+          (SELECT COUNT(*) FROM objetivos_nutricionales WHERE is_active)::int AS active_goals,
+          (SELECT COUNT(*) FROM condiciones_clinicas WHERE is_active)::int AS active_conditions,
+          (SELECT COUNT(*) FROM reglas_nutricionales WHERE is_active)::int AS active_rules,
+          (SELECT COUNT(*) FROM notifications WHERE read_at IS NULL)::int AS unread_notifications
+      `),
+      pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM recetas
+            WHERE calorias IS NOT NULL
+              AND protein_g IS NOT NULL
+              AND carbs_g IS NOT NULL
+              AND fat_g IS NOT NULL
+              AND saturated_fat_g IS NOT NULL
+              AND sugar_g IS NOT NULL
+              AND fiber_g IS NOT NULL
+              AND sodium_mg IS NOT NULL)::int AS nutrition_complete_recipes,
+          (SELECT COUNT(*) FROM recetas
+            WHERE nutrition_source <> 'unknown'
+              AND nutrition_reviewed_at IS NOT NULL)::int AS nutrition_reviewed_recipes,
+          (SELECT COUNT(*) FROM receta_ingredientes)::int AS ingredient_relations,
+          (SELECT COUNT(*) FROM receta_ingredientes
+            WHERE amount_g IS NOT NULL OR amount IS NOT NULL)::int AS quantified_ingredient_relations,
+          (SELECT COUNT(*) FROM ingredientes WHERE food_group <> 'other')::int AS categorized_ingredients,
+          (SELECT COUNT(*) FROM ingredientes WHERE substitution_group <> 'other')::int AS substitution_ready_ingredients
+      `),
+      pool.query(`
+        SELECT
+          COUNT(*)::int AS analyses,
+          COUNT(*) FILTER (WHERE status = 'succeeded')::int AS succeeded,
+          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+          COALESCE(SUM(CASE
+            WHEN status = 'succeeded' THEN estimated_cost_usd
+            WHEN status = 'pending' THEN reserved_cost_usd
+            ELSE 0
+          END), 0)::numeric AS committed_usd
+        FROM vision_analysis_usage
+        WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+      `),
+      pool.query("SELECT to_regclass('public.schema_migrations') AS migration_table")
+    ]);
+
+    const knownMigrations = fs.readdirSync(path.join(__dirname, "..", "migrations"))
+      .filter((fileName) => /^\d{3}_.+\.sql$/.test(fileName))
+      .sort();
+    const recordedMigrations = migrationTableResult.rows[0].migration_table
+      ? (await pool.query("SELECT version, file_name, applied_at FROM schema_migrations ORDER BY version")).rows
+      : [];
+    const recordedByVersion = new Map(recordedMigrations.map((migration) => [migration.version, migration]));
+    const counts = countsResult.rows[0];
+    const quality = qualityResult.rows[0];
+    const usage = usageResult.rows[0];
+    const policy = getVisionUsagePolicy();
+    const provider = getVisionProvider();
+
+    return res.json({
+      generatedAt: new Date().toISOString(),
+      counts: {
+        users: counts.users,
+        profiles: counts.profiles,
+        profileCoveragePercent: counts.users ? Math.round((counts.profiles / counts.users) * 100) : 0,
+        recipes: counts.recipes,
+        ingredients: counts.ingredients,
+        restrictions: counts.restrictions,
+        activeGoals: counts.active_goals,
+        activeConditions: counts.active_conditions,
+        activeRules: counts.active_rules,
+        unreadNotifications: counts.unread_notifications
+      },
+      catalogQuality: {
+        nutritionCompleteRecipes: quality.nutrition_complete_recipes,
+        nutritionCompletePercent: counts.recipes
+          ? Math.round((quality.nutrition_complete_recipes / counts.recipes) * 100)
+          : 0,
+        nutritionReviewedRecipes: quality.nutrition_reviewed_recipes,
+        nutritionReviewedPercent: counts.recipes
+          ? Math.round((quality.nutrition_reviewed_recipes / counts.recipes) * 100)
+          : 0,
+        ingredientRelations: quality.ingredient_relations,
+        quantifiedIngredientRelations: quality.quantified_ingredient_relations,
+        quantifiedIngredientsPercent: quality.ingredient_relations
+          ? Math.round((quality.quantified_ingredient_relations / quality.ingredient_relations) * 100)
+          : 0,
+        categorizedIngredients: quality.categorized_ingredients,
+        categorizedIngredientsPercent: counts.ingredients
+          ? Math.round((quality.categorized_ingredients / counts.ingredients) * 100)
+          : 0,
+        substitutionReadyIngredients: quality.substitution_ready_ingredients,
+        substitutionReadyPercent: counts.ingredients
+          ? Math.round((quality.substitution_ready_ingredients / counts.ingredients) * 100)
+          : 0
+      },
+      vision: {
+        configured: Boolean(provider),
+        provider: provider?.name || null,
+        model: provider?.model || null,
+        monthlyBudgetUsd: policy.monthlyBudgetUsd,
+        committedUsd: Number(usage.committed_usd),
+        analyses: usage.analyses,
+        succeeded: usage.succeeded,
+        failed: usage.failed,
+        pending: usage.pending
+      },
+      migrations: knownMigrations.map((fileName) => {
+        const version = fileName.slice(0, 3);
+        const recorded = recordedByVersion.get(version);
+        return {
+          version,
+          fileName,
+          recorded: Boolean(recorded),
+          recordedAt: recorded?.applied_at || null
+        };
+      })
+    });
+  } catch (error) {
+    console.error("Error consultando operacion administrativa:", error);
+    return res.status(500).json({ error: "Error consultando el estado operativo" });
+  }
+};
+
+const listUsers = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(5, Number.parseInt(req.query.limit, 10) || 15));
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const role = ["usuario", "administrador"].includes(req.query.role) ? req.query.role : null;
+    const offset = (page - 1) * limit;
+    const params = [];
+    const filters = [];
+    if (search) {
+      params.push(`%${search}%`);
+      filters.push(`(u.nombre ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+    }
+    if (role) {
+      params.push(role);
+      filters.push(`u.rol = $${params.length}`);
+    }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM usuarios u ${where}`, params);
+    params.push(limit, offset);
+    const users = await pool.query(`
+      SELECT
+        u.id, u.nombre, u.email, u.rol, u.fecha_registro,
+        (p.usuario_id IS NOT NULL) AS has_profile,
+        COUNT(DISTINCT uo.objetivo_id)::int AS goals_count,
+        COUNT(DISTINCT uc.condicion_id)::int AS conditions_count,
+        COUNT(DISTINCT ur.restriccion_id)::int AS restrictions_count
+      FROM usuarios u
+      LEFT JOIN perfiles_usuario p ON p.usuario_id = u.id
+      LEFT JOIN usuario_objetivos uo ON uo.usuario_id = u.id
+      LEFT JOIN usuario_condiciones uc ON uc.usuario_id = u.id
+      LEFT JOIN usuario_restricciones ur ON ur.usuario_id = u.id
+      ${where}
+      GROUP BY u.id, p.usuario_id
+      ORDER BY u.fecha_registro DESC NULLS LAST, u.id DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}
+    `, params);
+    const total = countResult.rows[0].total;
+    return res.json({
+      items: users.rows,
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    });
+  } catch (error) {
+    console.error("Error listando usuarios administrativos:", error);
+    return res.status(500).json({ error: "Error consultando usuarios" });
+  }
+};
+
+const updateUserRole = async (req, res) => {
+  const userId = Number.parseInt(req.params.id, 10);
+  const role = req.body?.role;
+  if (!Number.isInteger(userId) || !["usuario", "administrador"].includes(role)) {
+    return res.status(400).json({ message: "Usuario o rol invalido" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const userResult = await client.query("SELECT id, nombre, email, rol FROM usuarios WHERE id = $1 FOR UPDATE", [userId]);
+    const user = userResult.rows[0];
+    if (!user) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+    if (user.rol === "administrador" && role !== "administrador") {
+      const admins = await client.query("SELECT COUNT(*)::int AS total FROM usuarios WHERE rol = 'administrador'");
+      if (admins.rows[0].total <= 1) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "No puedes remover el rol del ultimo administrador" });
+      }
+    }
+    const updated = await client.query(
+      "UPDATE usuarios SET rol = $1 WHERE id = $2 RETURNING id, nombre, email, rol, fecha_registro",
+      [role, userId]
+    );
+    await client.query("COMMIT");
+    return res.json(updated.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error actualizando rol:", error);
+    return res.status(500).json({ error: "Error actualizando el rol" });
+  } finally {
+    client.release();
+  }
+};
+
+const catalogConfig = {
+  goals: { table: "objetivos_nutricionales", condition: false },
+  conditions: { table: "condiciones_clinicas", condition: true }
+};
+
+const getCatalogConfig = (value) => catalogConfig[value] || null;
+const normalizeCatalogInput = (body, isCondition) => {
+  const code = typeof body.code === "string" ? body.code.trim().toLowerCase() : "";
+  const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
+  const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : "";
+  if (!/^[a-z][a-z0-9_]{2,79}$/.test(code) || nombre.length < 2 || nombre.length > 120 || descripcion.length > 1200) return null;
+  const normalized = { code, nombre, descripcion: descripcion || null, isActive: body.isActive !== false };
+  if (isCondition) {
+    if (!["low", "medium", "high"].includes(body.riskLevel)) return null;
+    normalized.riskLevel = body.riskLevel;
+    normalized.requiresGuidance = body.requiresProfessionalGuidance === true;
+  }
+  return normalized;
+};
+
+const listClinicalCatalogs = async (_req, res) => {
+  try {
+    const [goals, conditions] = await Promise.all([
+      pool.query("SELECT id, code, nombre, descripcion, is_active FROM objetivos_nutricionales ORDER BY is_active DESC, nombre"),
+      pool.query("SELECT id, code, nombre, descripcion, risk_level, requires_professional_guidance, is_active FROM condiciones_clinicas ORDER BY is_active DESC, risk_level DESC, nombre")
+    ]);
+    return res.json({ goals: goals.rows, conditions: conditions.rows });
+  } catch (error) {
+    console.error("Error consultando catalogos clinicos:", error);
+    return res.status(500).json({ error: "Error consultando catalogos clinicos" });
+  }
+};
+
+const createClinicalCatalogItem = async (req, res) => {
+  const config = getCatalogConfig(req.params.catalog);
+  const input = config && normalizeCatalogInput(req.body || {}, config.condition);
+  if (!config || !input) return res.status(400).json({ message: "Catalogo o datos invalidos" });
+  try {
+    const query = config.condition
+      ? `INSERT INTO ${config.table} (code, nombre, descripcion, risk_level, requires_professional_guidance, is_active) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`
+      : `INSERT INTO ${config.table} (code, nombre, descripcion, is_active) VALUES ($1,$2,$3,$4) RETURNING *`;
+    const values = config.condition
+      ? [input.code, input.nombre, input.descripcion, input.riskLevel, input.requiresGuidance, input.isActive]
+      : [input.code, input.nombre, input.descripcion, input.isActive];
+    return res.status(201).json((await pool.query(query, values)).rows[0]);
+  } catch (error) {
+    if (error.code === "23505") return res.status(409).json({ message: "El codigo ya existe" });
+    console.error("Error creando elemento clinico:", error);
+    return res.status(500).json({ error: "Error creando elemento clinico" });
+  }
+};
+
+const updateClinicalCatalogItem = async (req, res) => {
+  const config = getCatalogConfig(req.params.catalog);
+  const id = Number.parseInt(req.params.id, 10);
+  const input = config && normalizeCatalogInput(req.body || {}, config.condition);
+  if (!config || !Number.isInteger(id) || !input) return res.status(400).json({ message: "Catalogo o datos invalidos" });
+  try {
+    const query = config.condition
+      ? `UPDATE ${config.table} SET code=$1, nombre=$2, descripcion=$3, risk_level=$4, requires_professional_guidance=$5, is_active=$6 WHERE id=$7 RETURNING *`
+      : `UPDATE ${config.table} SET code=$1, nombre=$2, descripcion=$3, is_active=$4 WHERE id=$5 RETURNING *`;
+    const values = config.condition
+      ? [input.code, input.nombre, input.descripcion, input.riskLevel, input.requiresGuidance, input.isActive, id]
+      : [input.code, input.nombre, input.descripcion, input.isActive, id];
+    const result = await pool.query(query, values);
+    if (!result.rows[0]) return res.status(404).json({ message: "Elemento no encontrado" });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") return res.status(409).json({ message: "El codigo ya existe" });
+    console.error("Error actualizando elemento clinico:", error);
+    return res.status(500).json({ error: "Error actualizando elemento clinico" });
+  }
+};
+
+const ruleOptions = {
+  scopeTypes: ["global", "goal", "condition"],
+  nutrients: ["calories", "protein_g", "carbs_g", "fat_g", "saturated_fat_g", "sugar_g", "fiber_g", "sodium_mg"],
+  ruleTypes: ["min", "max", "range", "recommendation"],
+  severities: ["info", "warning", "danger"]
+};
+
+const ingredientFoodGroups = FOOD_GROUPS;
+const ingredientSubstitutionGroups = SUBSTITUTION_GROUPS;
+
+const parseAdminPagination = (query, defaultLimit = 15) => {
+  const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(5, Number.parseInt(query.limit, 10) || defaultLimit));
+  return { page, limit, offset: (page - 1) * limit };
+};
+
+const normalizeRuleInput = (body = {}) => {
+  const scopeType = ruleOptions.scopeTypes.includes(body.scopeType) ? body.scopeType : null;
+  const scopeCode = typeof body.scopeCode === "string" ? body.scopeCode.trim().toLowerCase() : "";
+  const nutrient = ruleOptions.nutrients.includes(body.nutrient) ? body.nutrient : null;
+  const ruleType = ruleOptions.ruleTypes.includes(body.ruleType) ? body.ruleType : null;
+  const severity = ruleOptions.severities.includes(body.severity) ? body.severity : null;
+  const unit = typeof body.unit === "string" ? body.unit.trim() : "";
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+  const parseValue = (value) => value === "" || value === null || value === undefined ? null : Number(value);
+  const minValue = parseValue(body.minValue);
+  const maxValue = parseValue(body.maxValue);
+  const numbersValid = [minValue, maxValue].every((value) => value === null || (Number.isFinite(value) && value >= 0));
+  const boundsValid = ruleType === "min" ? minValue !== null
+    : ruleType === "max" ? maxValue !== null
+      : ruleType === "range" ? minValue !== null && maxValue !== null && minValue <= maxValue
+        : true;
+  if (!scopeType || !/^[a-z][a-z0-9_]{2,79}$/.test(scopeCode) || !nutrient || !ruleType || !severity ||
+      !numbersValid || !boundsValid || unit.length < 1 || unit.length > 30 || message.length < 5 || message.length > 1200) return null;
+  return { scopeType, scopeCode, nutrient, ruleType, minValue, maxValue, unit, severity, message, isActive: body.isActive !== false };
+};
+
+const validateRuleScope = async (input) => {
+  if (input.scopeType === "global") return input.scopeCode === "default";
+  const table = input.scopeType === "goal" ? "objetivos_nutricionales" : "condiciones_clinicas";
+  const result = await pool.query(`SELECT 1 FROM ${table} WHERE code = $1`, [input.scopeCode]);
+  return Boolean(result.rows[0]);
+};
+
+const listNutritionRules = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(5, Number.parseInt(req.query.limit, 10) || 20));
+    const scopeType = ruleOptions.scopeTypes.includes(req.query.scopeType) ? req.query.scopeType : null;
+    const active = req.query.active === "true" ? true : req.query.active === "false" ? false : null;
+    const params = [];
+    const filters = [];
+    if (scopeType) { params.push(scopeType); filters.push(`scope_type = $${params.length}`); }
+    if (active !== null) { params.push(active); filters.push(`is_active = $${params.length}`); }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM reglas_nutricionales ${where}`, params);
+    params.push(limit, (page - 1) * limit);
+    const result = await pool.query(
+      `SELECT id, scope_type, scope_code, nutrient, rule_type, min_value, max_value, unit, severity, message, is_active, created_at
+       FROM reglas_nutricionales ${where}
+       ORDER BY is_active DESC, scope_type, scope_code, nutrient, id
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const total = totalResult.rows[0].total;
+    return res.json({
+      items: result.rows,
+      options: ruleOptions,
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    });
+  } catch (error) {
+    console.error("Error consultando reglas nutricionales:", error);
+    return res.status(500).json({ error: "Error consultando reglas nutricionales" });
+  }
+};
+
+const saveNutritionRule = async (req, res) => {
+  const id = req.params.id ? Number.parseInt(req.params.id, 10) : null;
+  const input = normalizeRuleInput(req.body);
+  if (!input || (req.params.id && !Number.isInteger(id))) return res.status(400).json({ message: "Regla nutricional invalida" });
+  try {
+    if (!(await validateRuleScope(input))) return res.status(400).json({ message: "El alcance seleccionado no existe" });
+    const values = [input.scopeType, input.scopeCode, input.nutrient, input.ruleType, input.minValue, input.maxValue, input.unit, input.severity, input.message, input.isActive];
+    const result = id
+      ? await pool.query(
+        `UPDATE reglas_nutricionales SET scope_type=$1, scope_code=$2, nutrient=$3, rule_type=$4, min_value=$5, max_value=$6, unit=$7, severity=$8, message=$9, is_active=$10 WHERE id=$11 RETURNING *`,
+        [...values, id]
+      )
+      : await pool.query(
+        `INSERT INTO reglas_nutricionales (scope_type, scope_code, nutrient, rule_type, min_value, max_value, unit, severity, message, is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        values
+      );
+    if (!result.rows[0]) return res.status(404).json({ message: "Regla no encontrada" });
+    return res.status(id ? 200 : 201).json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") return res.status(409).json({ message: "Ya existe una regla equivalente" });
+    console.error("Error guardando regla nutricional:", error);
+    return res.status(500).json({ error: "Error guardando regla nutricional" });
+  }
+};
+
+const normalizeRestrictionInput = (body = {}) => {
+  const nombre = typeof body.nombre === "string" ? body.nombre.trim().toLowerCase() : "";
+  const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : "";
+  if (nombre.length < 2 || nombre.length > 120 || descripcion.length > 1200) return null;
+  return { nombre, descripcion: descripcion || null, isActive: body.isActive !== false };
+};
+
+const listRestrictionsAdmin = async (req, res) => {
+  try {
+    const { page, limit, offset } = parseAdminPagination(req.query);
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const params = search ? [`%${search}%`] : [];
+    const where = search ? "WHERE r.nombre ILIKE $1 OR r.descripcion ILIKE $1" : "";
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM restricciones r ${where}`, params);
+    params.push(limit, offset);
+    const result = await pool.query(
+      `SELECT r.id, r.nombre, r.descripcion, r.is_active,
+         COUNT(DISTINCT ur.usuario_id)::int AS users_count,
+         COUNT(DISTINCT ir.ingrediente_id)::int AS ingredients_count
+       FROM restricciones r
+       LEFT JOIN usuario_restricciones ur ON ur.restriccion_id = r.id
+       LEFT JOIN ingrediente_restricciones ir ON ir.restriccion_id = r.id
+       ${where}
+       GROUP BY r.id
+       ORDER BY r.is_active DESC, r.nombre
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const total = totalResult.rows[0].total;
+    return res.json({ items: result.rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
+  } catch (error) {
+    console.error("Error consultando restricciones:", error);
+    return res.status(500).json({ error: "Error consultando restricciones" });
+  }
+};
+
+const saveRestrictionAdmin = async (req, res) => {
+  const id = req.params.id ? Number.parseInt(req.params.id, 10) : null;
+  const input = normalizeRestrictionInput(req.body);
+  if (!input || (req.params.id && !Number.isInteger(id))) return res.status(400).json({ message: "Restriccion invalida" });
+  try {
+    const duplicate = await pool.query("SELECT id FROM restricciones WHERE LOWER(nombre) = LOWER($1) AND ($2::int IS NULL OR id <> $2)", [input.nombre, id]);
+    if (duplicate.rows[0]) return res.status(409).json({ message: "Ya existe una restriccion con ese nombre" });
+    const result = id
+      ? await pool.query("UPDATE restricciones SET nombre=$1, descripcion=$2, is_active=$3 WHERE id=$4 RETURNING *", [input.nombre, input.descripcion, input.isActive, id])
+      : await pool.query("INSERT INTO restricciones (nombre, descripcion, is_active) VALUES ($1,$2,$3) RETURNING *", [input.nombre, input.descripcion, input.isActive]);
+    if (!result.rows[0]) return res.status(404).json({ message: "Restriccion no encontrada" });
+    return res.status(id ? 200 : 201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error guardando restriccion:", error);
+    return res.status(500).json({ error: "Error guardando restriccion" });
+  }
+};
+
+const listVisionUsage = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(5, Number.parseInt(req.query.limit, 10) || 20));
+    const status = ["pending", "succeeded", "failed"].includes(req.query.status) ? req.query.status : null;
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const params = [];
+    const filters = [];
+    if (status) { params.push(status); filters.push(`v.status = $${params.length}`); }
+    if (search) { params.push(`%${search}%`); filters.push(`(u.nombre ILIKE $${params.length} OR u.email ILIKE $${params.length})`); }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const summaryParams = [...params];
+    const summary = await pool.query(
+      `SELECT COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE v.status='succeeded')::int AS succeeded,
+         COUNT(*) FILTER (WHERE v.status='failed')::int AS failed,
+         COUNT(*) FILTER (WHERE v.status='pending')::int AS pending,
+         COALESCE(SUM(v.total_tokens),0)::int AS total_tokens,
+         COALESCE(SUM(CASE WHEN v.status='succeeded' THEN v.estimated_cost_usd WHEN v.status='pending' THEN v.reserved_cost_usd ELSE 0 END),0)::numeric AS committed_usd
+       FROM vision_analysis_usage v JOIN usuarios u ON u.id=v.usuario_id ${where}`,
+      summaryParams
+    );
+    params.push(limit, (page - 1) * limit);
+    const result = await pool.query(
+      `SELECT v.request_id, v.usuario_id, u.nombre AS user_name, u.email AS user_email, v.provider, v.model, v.status,
+         v.input_tokens, v.output_tokens, v.total_tokens, v.reserved_cost_usd, v.estimated_cost_usd, v.error_code, v.created_at, v.completed_at
+       FROM vision_analysis_usage v JOIN usuarios u ON u.id=v.usuario_id ${where}
+       ORDER BY v.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const totals = summary.rows[0];
+    const policy = getVisionUsagePolicy();
+    return res.json({
+      items: result.rows,
+      summary: { ...totals, committed_usd: Number(totals.committed_usd) },
+      policy,
+      pagination: { page, limit, total: totals.total, totalPages: Math.max(1, Math.ceil(totals.total / limit)) }
+    });
+  } catch (error) {
+    console.error("Error consultando uso de IA:", error);
+    return res.status(500).json({ error: "Error consultando uso de IA" });
+  }
+};
 
 // ================= Recetas =================
+
+const validateRecipeCatalogTemplate = (req, res) => {
+  const result = validateRecipeTemplate(req.body);
+  return res.status(result.valid ? 200 : 400).json(result);
+};
+
+const recipeCatalogTemplateFiles = {
+  catalog: "example.catalog.json",
+  recipe: "example.recipe.json",
+  recipes: "recipes.csv",
+  ingredients: "ingredients.csv",
+  relations: "recipe_ingredients.csv"
+};
+
+const downloadRecipeCatalogTemplate = (req, res) => {
+  const fileName = recipeCatalogTemplateFiles[req.params.file];
+  if (!fileName) return res.status(404).json({ message: "Plantilla no encontrada" });
+  return res.download(path.join(__dirname, "..", "templates", "recipe_catalog", fileName), fileName);
+};
+
+const previewRecipeCatalogImport = async (req, res) => {
+  try {
+    return res.json(await buildRecipeCatalogPreview(pool, req.body));
+  } catch (error) {
+    console.error("Error previsualizando catalogo de recetas:", error);
+    return res.status(500).json({ error: "Error previsualizando el catalogo" });
+  }
+};
+
+const executeRecipeCatalogImport = async (req, res) => {
+  try {
+    const result = await importRecipeCatalog(pool, req.body, req.user.id);
+    return res.status(result.imported ? 201 : 422).json(result);
+  } catch (error) {
+    console.error("Error importando catalogo de recetas:", error);
+    return res.status(500).json({ error: "Error importando el catalogo; no se aplicaron cambios" });
+  }
+};
+
+const recipeNutritionFields = [
+  "protein_g", "carbs_g", "fat_g", "saturated_fat_g",
+  "sugar_g", "fiber_g", "sodium_mg", "serving_size_g", "servings"
+];
+const recipeNutritionSources = new Set(["unknown", "manual", "usda_fdc", "calculated", "ai_estimate", "professional"]);
+
+const normalizeRecipeInput = (body) => {
+  const nombre = typeof body.nombre === "string" ? body.nombre.trim() : "";
+  const descripcion = typeof body.descripcion === "string" ? body.descripcion.trim() : "";
+  const numeric = {};
+  for (const field of ["calorias", "tiempo_preparacion", "nivel_salud", ...recipeNutritionFields]) {
+    const value = body[field];
+    numeric[field] = value === "" || value === null || value === undefined ? null : Number(value);
+    if (numeric[field] !== null && (!Number.isFinite(numeric[field]) || numeric[field] < 0)) return null;
+  }
+  const nivelSalud = numeric.nivel_salud ?? 3;
+  const servings = numeric.servings ?? 1;
+  const ingredientIds = Array.isArray(body.ingredients) ? body.ingredients.map(Number) : [];
+  if (
+    !nombre || nombre.length > 160 || descripcion.length > 2000
+    || !Number.isInteger(nivelSalud) || nivelSalud < 1 || nivelSalud > 5
+    || !Number.isFinite(servings) || servings <= 0
+    || (numeric.serving_size_g !== null && numeric.serving_size_g <= 0)
+    || (numeric.calorias !== null && (!Number.isInteger(numeric.calorias) || numeric.calorias <= 0))
+    || (numeric.tiempo_preparacion !== null && (!Number.isInteger(numeric.tiempo_preparacion) || numeric.tiempo_preparacion <= 0))
+    || ingredientIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
+  ) return null;
+  const nutritionSource = recipeNutritionSources.has(body.nutrition_source) ? body.nutrition_source : "unknown";
+  const ingredients = [...new Set(ingredientIds)];
+  return { nombre, descripcion: descripcion || null, ...numeric, nivel_salud: nivelSalud, servings, nutrition_source: nutritionSource, ingredients };
+};
 
 // Listar recetas con ingredientes
 const listRecipes = async (req, res) => {
   try {
+    const { page, limit, offset } = parseAdminPagination(req.query);
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const params = search ? [`%${search}%`] : [];
+    const where = search ? "WHERE r.nombre ILIKE $1 OR r.descripcion ILIKE $1" : "";
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM recetas r ${where}`, params);
+    params.push(limit, offset);
     const result = await pool.query(`
-      SELECT r.id, r.nombre, r.descripcion, r.calorias, r.tiempo_preparacion,
+      SELECT r.*,
         COALESCE(
           json_agg(json_build_object('id', i.id, 'nombre', i.nombre)) 
           FILTER (WHERE i.id IS NOT NULL), '[]'
@@ -14,10 +585,13 @@ const listRecipes = async (req, res) => {
       FROM recetas r
       LEFT JOIN receta_ingredientes ri ON r.id = ri.receta_id
       LEFT JOIN ingredientes i ON ri.ingrediente_id = i.id
+      ${where}
       GROUP BY r.id
-      ORDER BY r.id
-    `);
-    res.json(result.rows);
+      ORDER BY r.id DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}
+    `, params);
+    const total = totalResult.rows[0].total;
+    res.json({ items: result.rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error obteniendo recetas" });
@@ -26,28 +600,41 @@ const listRecipes = async (req, res) => {
 
 // Crear receta con ingredientes
 const createRecipe = async (req, res) => {
-  const { nombre, descripcion, calorias, tiempo_preparacion, ingredients } = req.body;
+  const input = normalizeRecipeInput(req.body);
+  if (!input) return res.status(400).json({ message: "Datos de receta invalidos" });
 
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
-      `INSERT INTO recetas(nombre, descripcion, calorias, tiempo_preparacion)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [nombre, descripcion, calorias, tiempo_preparacion]
+    await client.query("BEGIN");
+    const result = await client.query(
+      `INSERT INTO recetas(
+         nombre, descripcion, calorias, tiempo_preparacion, nivel_salud,
+         protein_g, carbs_g, fat_g, saturated_fat_g, sugar_g, fiber_g, sodium_mg,
+         serving_size_g, servings, nutrition_source, nutrition_reviewed_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+         CASE WHEN $15 = 'unknown' THEN NULL ELSE CURRENT_TIMESTAMP END
+       ) RETURNING *`,
+      [
+        input.nombre, input.descripcion, input.calorias, input.tiempo_preparacion, input.nivel_salud,
+        input.protein_g, input.carbs_g, input.fat_g, input.saturated_fat_g, input.sugar_g,
+        input.fiber_g, input.sodium_mg, input.serving_size_g, input.servings, input.nutrition_source
+      ]
     );
 
     const receta = result.rows[0];
 
     // Insertar ingredientes relacionados
-    if (ingredients?.length > 0) {
-      const values = ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
-      await pool.query(
+    if (input.ingredients.length > 0) {
+      const values = input.ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
+      await client.query(
         `INSERT INTO receta_ingredientes(receta_id, ingrediente_id) VALUES ${values}`,
-        [receta.id, ...ingredients.map(Number)]
+        [receta.id, ...input.ingredients]
       );
     }
 
     // Devolver receta con ingredientes
-    const recetaConIngredientes = await pool.query(`
+    const recetaConIngredientes = await client.query(`
       SELECT r.*,
         COALESCE(
           json_agg(json_build_object('id', i.id, 'nombre', i.nombre))
@@ -60,35 +647,58 @@ const createRecipe = async (req, res) => {
       GROUP BY r.id
     `, [receta.id]);
 
-    res.json(recetaConIngredientes.rows[0]);
+    await client.query("COMMIT");
+    res.status(201).json(recetaConIngredientes.rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error creando receta:", err);
     res.status(500).json({ error: "Ocurrió un error al guardar la receta" });
+  } finally {
+    client.release();
   }
 };
 
 // Actualizar receta con ingredientes
 const updateRecipe = async (req, res) => {
-  const { id } = req.params;
-  const { nombre, descripcion, calorias, tiempo_preparacion, ingredients } = req.body;
+  const id = Number(req.params.id);
+  const input = normalizeRecipeInput(req.body);
+  if (!Number.isSafeInteger(id) || id <= 0 || !input) return res.status(400).json({ message: "Datos de receta invalidos" });
 
+  const client = await pool.connect();
   try {
-    await pool.query(
-      `UPDATE recetas SET nombre=$1, descripcion=$2, calorias=$3, tiempo_preparacion=$4 WHERE id=$5`,
-      [nombre, descripcion, calorias, tiempo_preparacion, id]
+    await client.query("BEGIN");
+    const updateResult = await client.query(
+      `UPDATE recetas SET
+         nombre=$1, descripcion=$2, calorias=$3, tiempo_preparacion=$4, nivel_salud=$5,
+         protein_g=$6, carbs_g=$7, fat_g=$8, saturated_fat_g=$9, sugar_g=$10,
+         fiber_g=$11, sodium_mg=$12, serving_size_g=$13, servings=$14,
+         nutrition_source=$15,
+         nutrition_reviewed_at=CASE WHEN $15 = 'unknown' THEN NULL ELSE CURRENT_TIMESTAMP END
+       WHERE id=$16
+       RETURNING id`,
+      [
+        input.nombre, input.descripcion, input.calorias, input.tiempo_preparacion, input.nivel_salud,
+        input.protein_g, input.carbs_g, input.fat_g, input.saturated_fat_g, input.sugar_g,
+        input.fiber_g, input.sodium_mg, input.serving_size_g, input.servings,
+        input.nutrition_source, id
+      ]
     );
+    if (!updateResult.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Receta no encontrada" });
+    }
 
     // Borrar ingredientes actuales y agregar los nuevos
-    await pool.query(`DELETE FROM receta_ingredientes WHERE receta_id=$1`, [id]);
-    if (ingredients?.length > 0) {
-      const values = ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
-      await pool.query(
+    await client.query(`DELETE FROM receta_ingredientes WHERE receta_id=$1`, [id]);
+    if (input.ingredients.length > 0) {
+      const values = input.ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
+      await client.query(
         `INSERT INTO receta_ingredientes(receta_id, ingrediente_id) VALUES ${values}`,
-        [id, ...ingredients.map(Number)]
+        [id, ...input.ingredients]
       );
     }
 
-    const recetaConIngredientes = await pool.query(`
+    const recetaConIngredientes = await client.query(`
       SELECT r.*,
         COALESCE(
           json_agg(json_build_object('id', i.id, 'nombre', i.nombre))
@@ -101,10 +711,14 @@ const updateRecipe = async (req, res) => {
       GROUP BY r.id
     `, [id]);
 
+    await client.query("COMMIT");
     res.json(recetaConIngredientes.rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error actualizando receta:", err);
     res.status(500).json({ error: "Ocurrió un error al actualizar la receta" });
+  } finally {
+    client.release();
   }
 };
 
@@ -125,8 +739,25 @@ const deleteRecipe = async (req, res) => {
 // Listar ingredientes
 const listIngredients = async (req, res) => {
   try {
-    const result = await pool.query(`SELECT id, nombre FROM ingredientes ORDER BY nombre`);
-    res.json(result.rows);
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const foodGroup = ingredientFoodGroups.includes(req.query.foodGroup) ? req.query.foodGroup : null;
+    const substitutionGroup = ingredientSubstitutionGroups.includes(req.query.substitutionGroup) ? req.query.substitutionGroup : null;
+    const params = [];
+    const filters = [];
+    if (search) { params.push(`%${search}%`); filters.push(`nombre ILIKE $${params.length}`); }
+    if (foodGroup) { params.push(foodGroup); filters.push(`food_group = $${params.length}`); }
+    if (substitutionGroup) { params.push(substitutionGroup); filters.push(`substitution_group = $${params.length}`); }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    if (req.query.all === "true") {
+      const result = await pool.query(`SELECT id, nombre, food_group, substitution_group FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre`, params);
+      return res.json({ items: result.rows, foodGroups: ingredientFoodGroups, substitutionGroups: ingredientSubstitutionGroups });
+    }
+    const { page, limit, offset } = parseAdminPagination(req.query);
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM ingredientes ${where}`, params);
+    params.push(limit, offset);
+    const result = await pool.query(`SELECT id, nombre, food_group, substitution_group FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+    const total = totalResult.rows[0].total;
+    return res.json({ items: result.rows, foodGroups: ingredientFoodGroups, substitutionGroups: ingredientSubstitutionGroups, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error obteniendo ingredientes" });
@@ -135,12 +766,14 @@ const listIngredients = async (req, res) => {
 
 // Crear ingrediente
 const createIngredient = async (req, res) => {
-  console.log("Body recibido:", req.body);
-  const { nombre } = req.body;
+  const nombre = normalizeName(req.body.nombre);
+  const foodGroup = ingredientFoodGroups.includes(req.body.foodGroup) ? req.body.foodGroup : null;
+  const substitutionGroup = ingredientSubstitutionGroups.includes(req.body.substitutionGroup) ? req.body.substitutionGroup : null;
+  if (!nombre || !foodGroup || !substitutionGroup) return res.status(400).json({ message: "El nombre y los grupos del ingrediente son obligatorios" });
   try {
     const result = await pool.query(
-      `INSERT INTO ingredientes(nombre) VALUES ($1) RETURNING *`,
-      [nombre]
+      `INSERT INTO ingredientes(nombre, food_group, substitution_group) VALUES ($1, $2, $3) RETURNING *`,
+      [nombre, foodGroup, substitutionGroup]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -149,11 +782,69 @@ const createIngredient = async (req, res) => {
   }
 };
 
+const updateIngredient = async (req, res) => {
+  const id = Number(req.params.id);
+  const nombre = normalizeName(req.body.nombre);
+  const foodGroup = ingredientFoodGroups.includes(req.body.foodGroup) ? req.body.foodGroup : null;
+  const substitutionGroup = ingredientSubstitutionGroups.includes(req.body.substitutionGroup) ? req.body.substitutionGroup : null;
+  if (!Number.isSafeInteger(id) || id <= 0 || !nombre || !foodGroup || !substitutionGroup) {
+    return res.status(400).json({ message: "Ingrediente invalido" });
+  }
+  try {
+    const result = await pool.query(
+      "UPDATE ingredientes SET nombre = $2, food_group = $3, substitution_group = $4 WHERE id = $1 RETURNING id, nombre, food_group, substitution_group",
+      [id, nombre, foodGroup, substitutionGroup]
+    );
+    if (!result.rows[0]) return res.status(404).json({ message: "Ingrediente no encontrado" });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error actualizando ingrediente:", error);
+    return res.status(500).json({ error: "Error actualizando ingrediente" });
+  }
+};
+
+const deleteIngredient = async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    return res.status(400).json({ message: "Ingrediente invalido" });
+  }
+  try {
+    const result = await pool.query("DELETE FROM ingredientes WHERE id = $1 RETURNING id", [id]);
+    if (!result.rows[0]) return res.status(404).json({ message: "Ingrediente no encontrado" });
+    return res.json({ deleted: true, id });
+  } catch (error) {
+    if (error.code === "23503") {
+      return res.status(409).json({ message: "El ingrediente esta relacionado con recetas o restricciones" });
+    }
+    console.error("Error eliminando ingrediente:", error);
+    return res.status(500).json({ error: "Error eliminando ingrediente" });
+  }
+};
+
+const normalizeName = (value) => typeof value === "string" ? value.trim().slice(0, 160) : "";
+
 module.exports = {
+  getOperationsOverview,
+  listUsers,
+  updateUserRole,
+  listClinicalCatalogs,
+  createClinicalCatalogItem,
+  updateClinicalCatalogItem,
+  listNutritionRules,
+  saveNutritionRule,
+  listRestrictionsAdmin,
+  saveRestrictionAdmin,
+  listVisionUsage,
   listRecipes,
+  validateRecipeCatalogTemplate,
+  downloadRecipeCatalogTemplate,
+  previewRecipeCatalogImport,
+  executeRecipeCatalogImport,
   createRecipe,
   updateRecipe,
   deleteRecipe,
   listIngredients,
-  createIngredient
+  createIngredient,
+  updateIngredient,
+  deleteIngredient
 };
