@@ -487,11 +487,13 @@ Las rutas de perfil avanzado requieren JWT y usan `req.user.id`.
 
 Una medición admite `weightKg`, `waistCm`, `bodyFatPct`, `adherencePct`, `energyLevel` y `notes`. Se exige al menos una variable medible y se validan fecha y rangos. La medición de peso más reciente actualiza `perfiles_usuario.peso_kg` dentro de la misma transacción para que el motor use el valor vigente.
 
+El contexto explicable de recomendaciones incluye `progress.latestMeasurementDate`, `progress.weightKg` y el factor `latest_progress_weight` cuando existe una medición. Ese peso alimenta la estimación energética vigente; las tendencias históricas todavía no alteran el ranking porque requieren una regla clínica validada.
+
 ### Administracion
 
 Las rutas administrativas requieren usuario con rol `administrador`.
 
-- `GET /api/admin/recipes?page=1&limit=15&search=`
+- `GET /api/admin/recipes?page=1&limit=15&search=&nutritionStatus=incomplete|complete|unreviewed`
 - `POST /api/admin/recipes`
 - `PUT /api/admin/recipes/:id`
 - `DELETE /api/admin/recipes/:id`

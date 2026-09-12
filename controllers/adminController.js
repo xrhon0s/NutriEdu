@@ -572,8 +572,19 @@ const listRecipes = async (req, res) => {
   try {
     const { page, limit, offset } = parseAdminPagination(req.query);
     const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
-    const params = search ? [`%${search}%`] : [];
-    const where = search ? "WHERE r.nombre ILIKE $1 OR r.descripcion ILIKE $1" : "";
+    const nutritionStatus = ["incomplete", "complete", "unreviewed"].includes(req.query.nutritionStatus) ? req.query.nutritionStatus : null;
+    const params = [];
+    const filters = [];
+    if (search) {
+      params.push(`%${search}%`);
+      filters.push(`(r.nombre ILIKE $${params.length} OR r.descripcion ILIKE $${params.length})`);
+    }
+    const completeNutrition = ["calorias", "protein_g", "carbs_g", "fat_g", "saturated_fat_g", "sugar_g", "fiber_g", "sodium_mg"]
+      .map((field) => `r.${field} IS NOT NULL`).join(" AND ");
+    if (nutritionStatus === "complete") filters.push(`(${completeNutrition})`);
+    if (nutritionStatus === "incomplete") filters.push(`NOT (${completeNutrition})`);
+    if (nutritionStatus === "unreviewed") filters.push("(r.nutrition_source = 'unknown' OR r.nutrition_reviewed_at IS NULL)");
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM recetas r ${where}`, params);
     params.push(limit, offset);
     const result = await pool.query(`

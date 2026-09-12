@@ -50,6 +50,7 @@ const run = async () => {
         { scope_type: "goal", scope_code: "gain_muscle", nutrient: "protein_g", rule_type: "min", min_value: 25, max_value: null, unit: "g_per_meal", severity: "info", message: "Proteina baja" },
         { scope_type: "condition", scope_code: "hypertension", nutrient: "sodium_mg", rule_type: "max", min_value: null, max_value: 600, unit: "mg_per_meal", severity: "danger", message: "Sodio alto" }
       ] };
+      if (sql.includes("FROM usuario_progreso")) return { rows: [{ recorded_on: "2026-09-06", weight_kg: 78 }] };
       if (sql.includes("GROUP BY r.id")) return { rows: [
         { id: 2, nombre: "Opcion limitada", calorias: 420, protein_g: 12, sodium_mg: 800, tiempo_preparacion: 60, nivel_salud: 3 },
         { id: 1, nombre: "Opcion compatible", calorias: 740, protein_g: 32, carbs_g: 70, fat_g: 20, saturated_fat_g: 4, sugar_g: 6, fiber_g: 8, sodium_mg: 420, tiempo_preparacion: 18, nivel_salud: 5 }
@@ -64,6 +65,8 @@ const run = async () => {
   assert.equal(result.recipes[0].recommendation.confidence, 1);
   assert.equal(result.profileContext.clinicalReviewRequired, true);
   assert.ok(result.profileContext.usedFactors.includes("goals_and_priority"));
+  assert.ok(result.profileContext.usedFactors.includes("latest_progress_weight"));
+  assert.equal(result.profileContext.progress.latestMeasurementDate, "2026-09-06");
   assert.ok(result.recipes[0].recommendation.reasons.length > 0);
 
   console.log(JSON.stringify({

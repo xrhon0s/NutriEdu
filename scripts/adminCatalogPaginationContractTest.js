@@ -27,9 +27,10 @@ const invoke = async (handler, request) => {
 };
 
 const run = async () => {
-  const recipes = await invoke(listRecipes, { query: { page: "2", limit: "5", search: "sopa" } });
+  const recipes = await invoke(listRecipes, { query: { page: "2", limit: "5", search: "sopa", nutritionStatus: "incomplete" } });
   assert.equal(recipes.body.pagination.page, 2);
   assert.equal(recipes.body.pagination.totalPages, 4);
+  assert.equal(recipes.status, 200);
 
   const ingredients = await invoke(listIngredients, { query: { page: "1", limit: "10", search: "pollo", foodGroup: "protein", substitutionGroup: "poultry" } });
   assert.equal(ingredients.body.pagination.totalPages, 3);

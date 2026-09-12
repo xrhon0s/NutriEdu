@@ -305,6 +305,7 @@ const buildContextSummary = (context) => {
   if (context.conditions.length) usedFactors.push("clinical_conditions");
   if (Object.keys(context.targetProfile.perMeal).length) usedFactors.push("nutrition_targets");
   if (context.targetProfile.energyEstimate.value !== null) usedFactors.push("age_sex_height_weight_activity");
+  if (context.latestProgress?.weight_kg != null) usedFactors.push("latest_progress_weight");
   if (asObject(context.profile?.habitos_alimentarios).meals_per_day) usedFactors.push("meals_per_day");
   if (cookingLimit(context.profile) !== null) usedFactors.push("cooking_time");
 
@@ -335,13 +336,17 @@ const buildContextSummary = (context) => {
         source: context.targetProfile.energyEstimate.source
       }
     },
+    progress: context.latestProgress ? {
+      latestMeasurementDate: context.latestProgress.recorded_on,
+      weightKg: toNumber(context.latestProgress.weight_kg)
+    } : null,
     conflicts: context.conflicts,
     clinicalReviewRequired: context.conflicts.length > 0 || context.conditions.some((condition) => condition.requires_professional_guidance)
   };
 };
 
 const loadRecommendationContext = async (pool, userId, now) => {
-  const [profileRes, goalsRes, conditionsRes, targetsRes, restrictionsRes, catalogRes, rulesRes] = await Promise.all([
+  const [profileRes, goalsRes, conditionsRes, targetsRes, restrictionsRes, catalogRes, rulesRes, progressRes] = await Promise.all([
     pool.query("SELECT * FROM perfiles_usuario WHERE usuario_id = $1", [userId]),
     pool.query(
       `SELECT og.code, og.nombre, uo.prioridad
@@ -368,7 +373,8 @@ const loadRecommendationContext = async (pool, userId, now) => {
       [userId]
     ),
     pool.query("SELECT id, nombre FROM restricciones WHERE is_active = TRUE"),
-    pool.query("SELECT * FROM reglas_nutricionales WHERE is_active = TRUE")
+    pool.query("SELECT * FROM reglas_nutricionales WHERE is_active = TRUE"),
+    pool.query("SELECT recorded_on, weight_kg FROM usuario_progreso WHERE usuario_id = $1 ORDER BY recorded_on DESC, id DESC LIMIT 1", [userId])
   ]);
 
   const profile = profileRes.rows[0] || null;
@@ -400,7 +406,7 @@ const loadRecommendationContext = async (pool, userId, now) => {
   const targetProfile = buildPerMealTargets({ profile, targets: targetsRes.rows[0], conditions, now });
   const conflicts = findConstraintConflicts(rules, targetProfile.perMeal);
 
-  return { profile, goals, conditions, rules, targetProfile, effectiveRestrictions, conflicts };
+  return { profile, goals, conditions, rules, targetProfile, effectiveRestrictions, conflicts, latestProgress: progressRes.rows[0] || null };
 };
 
 const getRecipeRecommendations = async (pool, { userId, limit = 6, offset = 0, now = new Date() }) => {
