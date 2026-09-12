@@ -479,6 +479,14 @@ Las rutas de perfil avanzado requieren JWT y usan `req.user.id`.
 }
 ```
 
+### Seguimiento longitudinal
+
+- `GET /api/profile/progress?limit=10&offset=0`: historial paginado, conteo y comparación entre primera y última medición.
+- `POST /api/profile/progress`: crea o reemplaza la medición del usuario autenticado para una fecha.
+- `DELETE /api/profile/progress/:id`: elimina únicamente una medición propia.
+
+Una medición admite `weightKg`, `waistCm`, `bodyFatPct`, `adherencePct`, `energyLevel` y `notes`. Se exige al menos una variable medible y se validan fecha y rangos. La medición de peso más reciente actualiza `perfiles_usuario.peso_kg` dentro de la misma transacción para que el motor use el valor vigente.
+
 ### Administracion
 
 Las rutas administrativas requieren usuario con rol `administrador`.
@@ -699,6 +707,8 @@ migrations/013_user_recipe_favorites.sql
 
 Crea `usuario_recetas_favoritas` con clave primaria compuesta, orden por fecha y cascada tanto al eliminar la cuenta como al retirar una receta. La migración `013` fue aplicada y verificada en PostgreSQL local el 12 de septiembre de 2026; sigue pendiente en Supabase.
 
+El seguimiento longitudinal requiere `migrations/014_user_progress_tracking.sql`. Crea `usuario_progreso`, una medición por usuario y fecha, rangos de integridad, procedencia, índice cronológico y cascada de eliminación. Está aplicada y verificada localmente; sigue pendiente en Supabase detrás de `013`.
+
 ### Ejecucion de migraciones
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
@@ -709,8 +719,8 @@ En desarrollo, `npm run dev` usa el modo watch integrado de Node y reinicia el b
 
 ```bash
 npm run migrate:status
-npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011 012 013
-npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010 011 012 013
+npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011 012 013 014
+npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010 011 012 013 014
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.
@@ -760,7 +770,9 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen diecisiete contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, compras, nutricion del plan y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen dieciocho contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+
+La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. Al 12 de septiembre de 2026, las 50 recetas locales tienen calorias, pero ninguna tiene porcion, macronutrientes completos o fuente registrada; esos valores deben cargarse con procedencia verificable antes de usar el ranking para metas nutricionales estrictas.
 
 ## Despliegue en Render
 

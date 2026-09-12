@@ -320,6 +320,13 @@ const assertMigration013 = async (client) => {
   }
 };
 
+const assertMigration014 = async (client) => {
+  await assertRelations(client, "014", ["usuario_progreso", "idx_usuario_progreso_user_date"]);
+  await assertColumns(client, "014", {
+    usuario_progreso: ["id", "usuario_id", "recorded_on", "weight_kg", "waist_cm", "body_fat_pct", "adherence_pct", "energy_level", "notes", "source", "created_at", "updated_at"]
+  });
+};
+
 const migrationVerifiers = {
   "001": assertMigration001,
   "002": assertMigration002,
@@ -333,7 +340,8 @@ const migrationVerifiers = {
   "010": assertMigration010,
   "011": assertMigration011,
   "012": assertMigration012,
-  "013": assertMigration013
+  "013": assertMigration013,
+  "014": assertMigration014
 };
 
 const run = async () => {
