@@ -583,7 +583,13 @@ const normalizeRecipeInput = (body) => {
   }
   const nivelSalud = numeric.nivel_salud ?? 3;
   const servings = numeric.servings ?? 1;
-  const ingredientIds = Array.isArray(body.ingredients) ? body.ingredients.map(Number) : [];
+  const ingredientEntries = Array.isArray(body.ingredients) ? body.ingredients.map((item) => {
+    const object = item && typeof item === "object" ? item : { id: item };
+    const amount = object.amount === "" || object.amount === null || object.amount === undefined ? null : Number(object.amount);
+    const amountG = object.amount_g === "" || object.amount_g === null || object.amount_g === undefined ? null : Number(object.amount_g);
+    const unit = typeof object.unit === "string" ? object.unit.trim().slice(0, 30) : "";
+    return { id: Number(object.id), amount, unit: unit || null, amount_g: amountG };
+  }) : [];
   if (
     !nombre || nombre.length > 160 || descripcion.length > 2000
     || !Number.isInteger(nivelSalud) || nivelSalud < 1 || nivelSalud > 5
@@ -591,12 +597,15 @@ const normalizeRecipeInput = (body) => {
     || (numeric.serving_size_g !== null && numeric.serving_size_g <= 0)
     || (numeric.calorias !== null && (!Number.isInteger(numeric.calorias) || numeric.calorias <= 0))
     || (numeric.tiempo_preparacion !== null && (!Number.isInteger(numeric.tiempo_preparacion) || numeric.tiempo_preparacion <= 0))
-    || ingredientIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
+    || ingredientEntries.some((item) => !Number.isSafeInteger(item.id) || item.id <= 0
+      || (item.amount !== null && (!Number.isFinite(item.amount) || item.amount <= 0))
+      || (item.amount_g !== null && (!Number.isFinite(item.amount_g) || item.amount_g <= 0))
+      || ((item.amount === null) !== (item.unit === null)))
   ) return null;
   const nutritionSource = recipeNutritionSources.has(body.nutrition_source) ? body.nutrition_source : "unknown";
   const nutritionSourceReference = typeof body.nutrition_source_reference === "string" ? body.nutrition_source_reference.trim().slice(0, 1000) : "";
   if (nutritionSource !== "unknown" && !nutritionSourceReference) return null;
-  const ingredients = [...new Set(ingredientIds)];
+  const ingredients = [...new Map(ingredientEntries.map((item) => [item.id, item])).values()];
   return { nombre, descripcion: descripcion || null, ...numeric, nivel_salud: nivelSalud, servings, nutrition_source: nutritionSource, nutrition_source_reference: nutritionSource === "unknown" ? null : nutritionSourceReference, ingredients };
 };
 
@@ -623,7 +632,7 @@ const listRecipes = async (req, res) => {
     const result = await pool.query(`
       SELECT r.*,
         COALESCE(
-          json_agg(json_build_object('id', i.id, 'nombre', i.nombre)) 
+          json_agg(json_build_object('id', i.id, 'nombre', i.nombre, 'amount', ri.amount, 'unit', ri.unit, 'amount_g', ri.amount_g))
           FILTER (WHERE i.id IS NOT NULL), '[]'
         ) AS ingredients
       FROM recetas r
@@ -673,18 +682,19 @@ const createRecipe = async (req, res) => {
 
     // Insertar ingredientes relacionados
     if (input.ingredients.length > 0) {
-      const values = input.ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
-      await client.query(
-        `INSERT INTO receta_ingredientes(receta_id, ingrediente_id) VALUES ${values}`,
-        [receta.id, ...input.ingredients]
-      );
+      for (const ingredient of input.ingredients) {
+        await client.query(
+          `INSERT INTO receta_ingredientes(receta_id, ingrediente_id, amount, unit, amount_g) VALUES ($1,$2,$3,$4,$5)`,
+          [receta.id, ingredient.id, ingredient.amount, ingredient.unit, ingredient.amount_g]
+        );
+      }
     }
 
     // Devolver receta con ingredientes
     const recetaConIngredientes = await client.query(`
       SELECT r.*,
         COALESCE(
-          json_agg(json_build_object('id', i.id, 'nombre', i.nombre))
+          json_agg(json_build_object('id', i.id, 'nombre', i.nombre, 'amount', ri.amount, 'unit', ri.unit, 'amount_g', ri.amount_g))
           FILTER (WHERE i.id IS NOT NULL), '[]'
         ) AS ingredients
       FROM recetas r
@@ -739,17 +749,18 @@ const updateRecipe = async (req, res) => {
     // Borrar ingredientes actuales y agregar los nuevos
     await client.query(`DELETE FROM receta_ingredientes WHERE receta_id=$1`, [id]);
     if (input.ingredients.length > 0) {
-      const values = input.ingredients.map((_, i) => `($1, $${i + 2})`).join(",");
-      await client.query(
-        `INSERT INTO receta_ingredientes(receta_id, ingrediente_id) VALUES ${values}`,
-        [id, ...input.ingredients]
-      );
+      for (const ingredient of input.ingredients) {
+        await client.query(
+          `INSERT INTO receta_ingredientes(receta_id, ingrediente_id, amount, unit, amount_g) VALUES ($1,$2,$3,$4,$5)`,
+          [id, ingredient.id, ingredient.amount, ingredient.unit, ingredient.amount_g]
+        );
+      }
     }
 
     const recetaConIngredientes = await client.query(`
       SELECT r.*,
         COALESCE(
-          json_agg(json_build_object('id', i.id, 'nombre', i.nombre))
+          json_agg(json_build_object('id', i.id, 'nombre', i.nombre, 'amount', ri.amount, 'unit', ri.unit, 'amount_g', ri.amount_g))
           FILTER (WHERE i.id IS NOT NULL), '[]'
         ) AS ingredients
       FROM recetas r

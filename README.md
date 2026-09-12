@@ -278,6 +278,8 @@ Sin `paginated=true`, el endpoint conserva el arreglo historico usado por el fro
 
 Para enriquecer recetas existentes sin reconstruir sus ingredientes, `GET /api/admin/recipes/nutrition-worklist` descarga un JSON `nutrition_patch` con los valores actuales y `null` donde falta información. `POST /api/admin/recipes/nutrition-import/preview` exige porción, ocho nutrientes y referencia verificable; `POST /api/admin/recipes/nutrition-import` actualiza solo esos campos bajo transacción y auditoría. Las relaciones de ingredientes no se modifican.
 
+La creación y edición administrativa de recetas acepta ingredientes como IDs históricos o como `{ id, amount, unit, amount_g }`. `amount` y `unit` deben aparecer juntos; `amount_g` es opcional pero debe ser positivo. Las respuestas administrativas devuelven estos tres campos para que editar una receta no pierda la cuantificación existente.
+
 La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): `example.catalog.json` es importable desde el panel y las tres hojas CSV sirven para preparación tabular. El parser CSV directo sigue pendiente. El archivo JSON admite hasta 2 MB, 200 recetas y 500 definiciones de ingredientes.
 
 ### Intake de imagenes de comida
