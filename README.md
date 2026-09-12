@@ -285,6 +285,8 @@ La creación y edición administrativa de recetas acepta ingredientes como IDs h
 
 La administración de ingredientes consulta USDA FoodData Central mediante `GET /api/admin/ingredients/fdc/search?q=`. La búsqueda se limita a `Foundation` y `SR Legacy` y devuelve candidatos, no una selección automática. `POST /api/admin/ingredients/:id/fdc` vuelve a consultar el detalle elegido, exige los ocho nutrientes por 100 g y registra `fdc_id`, URL, administrador y fecha. La clave `USDA_FDC_API_KEY` permanece únicamente en backend.
 
+`GET /api/admin/ingredients` acepta además `nutritionStatus=incomplete|complete|unreviewed`. Devuelve los ocho valores por 100 g, procedencia y `recipe_usage_count`; las páginas administrativas se ordenan por número de recetas afectadas para atender primero los perfiles con mayor impacto. `all=true` conserva el orden alfabético/taxonómico usado por selectores internos.
+
 La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): `example.catalog.json` es importable desde el panel y las tres hojas CSV sirven para preparación tabular. El parser CSV directo sigue pendiente. El archivo JSON admite hasta 2 MB, 200 recetas y 500 definiciones de ingredientes.
 
 ### Intake de imagenes de comida
@@ -536,7 +538,7 @@ La consulta de usuarios pagina y filtra por nombre, correo o rol sin devolver `p
 
 Las reglas nutricionales validan alcance, catalogo asociado, nutriente, tipo, limites y severidad mediante allowlists. Las restricciones se crean, editan y desactivan sin romper relaciones existentes. El detalle de IA muestra solicitudes, tokens, costos estimados y errores; la politica de limites es solo lectura porque sus valores pertenecen a la configuracion protegida del backend.
 
-Recetas, ingredientes y restricciones administrativas se consultan con paginacion y busqueda del lado del servidor. Los ingredientes admiten filtro y clasificacion por grupo alimentario y grupo de sustitucion culinaria. `GET /api/admin/ingredients?all=true` se reserva para selectores internos que necesitan el catalogo completo.
+Recetas, ingredientes y restricciones administrativas se consultan con paginacion y busqueda del lado del servidor. Los ingredientes admiten filtro y clasificacion por grupo alimentario, grupo de sustitucion culinaria y estado nutricional. `GET /api/admin/ingredients?all=true` se reserva para selectores internos que necesitan el catalogo completo.
 
 El smoke administrativo local crea una cuenta temporal, prueba busqueda, catalogos, reglas, restricciones, uso de IA y cambio de rol, y elimina la cuenta al terminar:
 

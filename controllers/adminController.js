@@ -813,20 +813,34 @@ const listIngredients = async (req, res) => {
     const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
     const foodGroup = ingredientFoodGroups.includes(req.query.foodGroup) ? req.query.foodGroup : null;
     const substitutionGroup = ingredientSubstitutionGroups.includes(req.query.substitutionGroup) ? req.query.substitutionGroup : null;
+    const nutritionStatus = ["incomplete", "complete", "unreviewed"].includes(req.query.nutritionStatus) ? req.query.nutritionStatus : null;
     const params = [];
     const filters = [];
-    if (search) { params.push(`%${search}%`); filters.push(`nombre ILIKE $${params.length}`); }
-    if (foodGroup) { params.push(foodGroup); filters.push(`food_group = $${params.length}`); }
-    if (substitutionGroup) { params.push(substitutionGroup); filters.push(`substitution_group = $${params.length}`); }
+    const completeNutrition = [
+      "calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g",
+      "saturated_fat_per_100g", "sugar_per_100g", "fiber_per_100g", "sodium_mg_per_100g"
+    ].map((column) => `i.${column} IS NOT NULL`).join(" AND ");
+    const ingredientSelect = `
+      i.id, i.nombre, i.food_group, i.substitution_group, i.fdc_id,
+      i.calories_per_100g, i.protein_per_100g, i.carbs_per_100g, i.fat_per_100g,
+      i.saturated_fat_per_100g, i.sugar_per_100g, i.fiber_per_100g, i.sodium_mg_per_100g,
+      i.nutrition_source, i.nutrition_reviewed_at,
+      (SELECT COUNT(*)::int FROM receta_ingredientes ri WHERE ri.ingrediente_id = i.id) AS recipe_usage_count`;
+    if (search) { params.push(`%${search}%`); filters.push(`i.nombre ILIKE $${params.length}`); }
+    if (foodGroup) { params.push(foodGroup); filters.push(`i.food_group = $${params.length}`); }
+    if (substitutionGroup) { params.push(substitutionGroup); filters.push(`i.substitution_group = $${params.length}`); }
+    if (nutritionStatus === "complete") filters.push(`(${completeNutrition})`);
+    if (nutritionStatus === "incomplete") filters.push(`NOT (${completeNutrition})`);
+    if (nutritionStatus === "unreviewed") filters.push("(i.nutrition_source = 'unknown' OR i.nutrition_reviewed_at IS NULL)");
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     if (req.query.all === "true") {
-      const result = await pool.query(`SELECT id, nombre, food_group, substitution_group, fdc_id, nutrition_source, nutrition_reviewed_at FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre`, params);
+      const result = await pool.query(`SELECT ${ingredientSelect} FROM ingredientes i ${where} ORDER BY i.food_group, i.substitution_group, i.nombre`, params);
       return res.json({ items: result.rows, foodGroups: ingredientFoodGroups, substitutionGroups: ingredientSubstitutionGroups });
     }
     const { page, limit, offset } = parseAdminPagination(req.query);
-    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM ingredientes ${where}`, params);
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM ingredientes i ${where}`, params);
     params.push(limit, offset);
-    const result = await pool.query(`SELECT id, nombre, food_group, substitution_group, fdc_id, nutrition_source, nutrition_reviewed_at FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+    const result = await pool.query(`SELECT ${ingredientSelect} FROM ingredientes i ${where} ORDER BY recipe_usage_count DESC, i.food_group, i.substitution_group, i.nombre LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
     const total = totalResult.rows[0].total;
     return res.json({ items: result.rows, foodGroups: ingredientFoodGroups, substitutionGroups: ingredientSubstitutionGroups, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (err) {
