@@ -13,6 +13,7 @@ assert.equal(result.protein_g, 25);
 assert.equal(result.serving_size_g, 150);
 assert.equal(result.nutrition_source, "calculated");
 assert.match(result.nutrition_source_reference, /^NutriEdu calculation [a-f0-9]{16}/);
+assert.match(result.nutrition_source_reference, /1@2026-09-12,2@2026-09-12$/);
 assert.throws(() => calculateFromIngredientProfiles(input, [profile(1, [100, 20, 5, 4, 1, 2, 3, 50])]), { code: "NUTRITION_CALCULATION_INCOMPLETE" });
 assert.throws(() => normalizeCalculationInput({ servings: 0, ingredients: [] }), { code: "NUTRITION_CALCULATION_INCOMPLETE" });
 

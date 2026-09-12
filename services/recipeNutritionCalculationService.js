@@ -13,6 +13,7 @@ const NUTRIENTS = {
 
 const calculationError = (message, details = []) => Object.assign(new Error(message), { code: "NUTRITION_CALCULATION_INCOMPLETE", details });
 const round = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+const normalizeReviewedAt = (value) => value instanceof Date ? value.toISOString() : String(value);
 
 const normalizeCalculationInput = (body) => {
   const servings = Number(body?.servings);
@@ -51,7 +52,7 @@ const calculateFromIngredientProfiles = (input, profiles) => {
     return {
       id: ingredient.id,
       amountG: ingredient.amountG,
-      reviewedAt: profile.nutrition_reviewed_at,
+      reviewedAt: normalizeReviewedAt(profile.nutrition_reviewed_at),
       source: profile.nutrition_source,
       nutrients: Object.fromEntries(Object.values(NUTRIENTS).map((field) => [field, Number(profile[field])]))
     };
@@ -62,7 +63,7 @@ const calculateFromIngredientProfiles = (input, profiles) => {
     serving_size_g: round(input.ingredients.reduce((sum, ingredient) => sum + ingredient.amountG, 0) / input.servings),
     servings: input.servings,
     nutrition_source: "calculated",
-    nutrition_source_reference: `NutriEdu calculation ${digest}; ingredients ${snapshot.map((item) => `${item.id}@${String(item.reviewedAt).slice(0, 10)}`).join(",")}`
+    nutrition_source_reference: `NutriEdu calculation ${digest}; ingredients ${snapshot.map((item) => `${item.id}@${item.reviewedAt.slice(0, 10)}`).join(",")}`
   };
 };
 

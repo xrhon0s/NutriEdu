@@ -791,9 +791,13 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen veintiun contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion y calculo nutricional, USDA FoodData Central, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen veintidos contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion, calculo y piloto nutricional, USDA FoodData Central, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. El reporte incluye cobertura de recetas, doce ingredientes priorizados por uso y diez recetas ordenadas por bloqueadores de perfiles/cantidades. Al 12 de septiembre de 2026, las 50 recetas locales tienen calorias, pero ninguna tiene porcion, macronutrientes completos o fuente registrada; esos valores deben cargarse con procedencia verificable antes de usar el ranking para metas nutricionales estrictas.
+
+El primer lote reproducible está en `scripts/applyNutritionPilot.js`. `npm run pilot:nutrition` valida y calcula dentro de una transacción que termina en rollback; `npm run pilot:nutrition -- --apply` confirma la escritura. El piloto documenta los FDC ID y cantidades de “Yogur con almendras”, exige una identidad exacta de receta/ingredientes, toma un administrador como revisor y aplica perfiles, relaciones y nutrición calculada atómicamente. Puede fijarse el revisor con `PILOT_REVIEWER_EMAIL`.
+
+Después del piloto local, 1/50 recetas tiene porción, ocho nutrientes y procedencia, y 3/80 ingredientes tienen perfil USDA completo. El motor la evalúa con confianza completa y sin nutrientes ausentes; las restricciones incompatibles siguen excluyéndola antes del ranking.
 
 ## Despliegue en Render
 
