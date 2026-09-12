@@ -299,6 +299,27 @@ const assertMigration012 = async (client) => {
   }
 };
 
+const assertMigration013 = async (client) => {
+  await assertRelations(client, "013", [
+    "usuario_recetas_favoritas",
+    "idx_usuario_recetas_favoritas_created"
+  ]);
+  await assertColumns(client, "013", {
+    usuario_recetas_favoritas: ["usuario_id", "receta_id", "created_at"]
+  });
+
+  const cascades = await client.query(`
+    SELECT COUNT(*)::int AS count
+    FROM pg_constraint
+    WHERE contype = 'f'
+      AND conrelid = 'public.usuario_recetas_favoritas'::regclass
+      AND confdeltype = 'c'
+  `);
+  if (cascades.rows[0].count !== 2) {
+    throw new Error("Migration 013 verification failed: user and recipe foreign keys must cascade");
+  }
+};
+
 const migrationVerifiers = {
   "001": assertMigration001,
   "002": assertMigration002,
@@ -311,7 +332,8 @@ const migrationVerifiers = {
   "009": assertMigration009,
   "010": assertMigration010,
   "011": assertMigration011,
-  "012": assertMigration012
+  "012": assertMigration012,
+  "013": assertMigration013
 };
 
 const run = async () => {

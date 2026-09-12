@@ -408,6 +408,10 @@ const getRecipeRecommendations = async (pool, { userId, limit = 6, offset = 0, n
   const restrictionIds = context.effectiveRestrictions.map((restriction) => restriction.id);
   const recipesRes = await pool.query(
     `SELECT r.*,
+       EXISTS (
+         SELECT 1 FROM usuario_recetas_favoritas favorites
+         WHERE favorites.usuario_id = $2 AND favorites.receta_id = r.id
+       ) AS "isFavorite",
        COALESCE(
          jsonb_agg(DISTINCT jsonb_build_object('id', i.id, 'nombre', i.nombre))
          FILTER (WHERE i.id IS NOT NULL), '[]'::jsonb
@@ -423,7 +427,7 @@ const getRecipeRecommendations = async (pool, { userId, limit = 6, offset = 0, n
          AND ir.restriccion_id = ANY($1::int[])
      )
      GROUP BY r.id`,
-    [restrictionIds]
+    [restrictionIds, userId]
   );
 
   const ranked = recipesRes.rows

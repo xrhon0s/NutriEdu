@@ -243,10 +243,15 @@ La eliminacion ocurre en una transaccion. Un administrador no puede eliminarse s
 - `GET /api/recipes/recommended/:userId`
 - `GET /api/recipes/search/:userId`
 - `GET /api/recipes/recommendations`
+- `GET /api/recipes/favorites`
+- `PUT /api/recipes/favorites/:recipeId`
+- `DELETE /api/recipes/favorites/:recipeId`
 - `GET /api/recipes/evaluate/:recipeId`
 - `GET /api/recipes/check/:recipeId/:userId`
 
 Las rutas de recetas requieren JWT. Las rutas que contienen `:userId` mantienen la forma historica de la API, pero la logica usa `req.user.id`.
+
+Los favoritos se guardan por cuenta y no por dispositivo. El listado admite `limit` y `offset`, devuelve `isFavorite`, fecha de guardado y compatibilidad actual. `PUT` y `DELETE` son idempotentes: repetirlos conserva el mismo estado sin duplicar relaciones ni producir errores por ausencia.
 
 El buscador acepta filtros como:
 
@@ -686,6 +691,14 @@ migrations/012_ingredient_substitution_groups.sql
 
 Agrega `ingredientes.substitution_group`, una taxonomía culinaria más específica que `food_group`, un índice parcial y la clasificación inicial del catálogo. La administración y la plantilla de importación permiten asignar este grupo a ingredientes futuros.
 
+Las recetas guardadas requieren:
+
+```txt
+migrations/013_user_recipe_favorites.sql
+```
+
+Crea `usuario_recetas_favoritas` con clave primaria compuesta, orden por fecha y cascada tanto al eliminar la cuenta como al retirar una receta. La migración `013` fue aplicada y verificada en PostgreSQL local el 12 de septiembre de 2026; sigue pendiente en Supabase.
+
 ### Ejecucion de migraciones
 
 El runner usa una tabla `schema_migrations`, checksum SHA-256 y un advisory lock de PostgreSQL. Las versiones se indican de forma explicita para evitar ejecutar SQL accidentalmente sobre la base equivocada:
@@ -696,8 +709,8 @@ En desarrollo, `npm run dev` usa el modo watch integrado de Node y reinicia el b
 
 ```bash
 npm run migrate:status
-npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011 012
-npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010 011 012
+npm run migrate -- 001 002 003 004 005 006 007 008 009 010 011 012 013
+npm run migrate:baseline -- 001 002 003 004 005 006 007 008 009 010 011 012 013
 ```
 
 `DATABASE_URL` selecciona Supabase o produccion; sin ella se usan las variables locales `DB_*`. El comando muestra host, puerto y base antes de ejecutar, sin imprimir credenciales.
@@ -747,7 +760,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen dieciseis contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, plantilla, importacion de catalogo, compras, nutricion del plan y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen diecisiete contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, compras, nutricion del plan y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 ## Despliegue en Render
 

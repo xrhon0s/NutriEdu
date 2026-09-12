@@ -60,7 +60,16 @@ const getRecipeById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const result = await pool.query("SELECT * FROM recetas WHERE id = $1", [id]);
+    const result = await pool.query(
+      `SELECT r.*,
+        EXISTS (
+          SELECT 1 FROM usuario_recetas_favoritas favorites
+          WHERE favorites.usuario_id = $2 AND favorites.receta_id = r.id
+        ) AS "isFavorite"
+       FROM recetas r
+       WHERE r.id = $1`,
+      [id, req.user.id]
+    );
     if (result.rows.length === 0)
       return res.status(404).json({ message: "Receta no encontrada" });
 
@@ -192,6 +201,10 @@ const searchRecipes = async (req, res) => {
 
     let baseQuery = `
       SELECT r.*,
+        EXISTS (
+          SELECT 1 FROM usuario_recetas_favoritas favorites
+          WHERE favorites.usuario_id = $1 AND favorites.receta_id = r.id
+        ) AS "isFavorite",
         EXISTS (
           SELECT 1
           FROM receta_ingredientes ri
