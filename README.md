@@ -287,6 +287,8 @@ La administración de ingredientes consulta USDA FoodData Central mediante `GET 
 
 `GET /api/admin/ingredients` acepta además `nutritionStatus=incomplete|complete|unreviewed`. Devuelve los ocho valores por 100 g, procedencia y `recipe_usage_count`; las páginas administrativas se ordenan por número de recetas afectadas para atender primero los perfiles con mayor impacto. `all=true` conserva el orden alfabético/taxonómico usado por selectores internos.
 
+`PUT /api/admin/ingredients/:id` conserva la edición taxonómica histórica y acepta opcionalmente `nutrition`. Una carga nutricional manual debe incluir los ocho valores por 100 g, fuente `manual` o `professional` y referencia verificable; se registra el administrador y la fecha, y se elimina cualquier FDC ID anterior para no atribuir esos valores a USDA.
+
 La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): `example.catalog.json` es importable desde el panel y las tres hojas CSV sirven para preparación tabular. El parser CSV directo sigue pendiente. El archivo JSON admite hasta 2 MB, 200 recetas y 500 definiciones de ingredientes.
 
 ### Intake de imagenes de comida

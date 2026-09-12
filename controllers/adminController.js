@@ -308,6 +308,10 @@ const ruleOptions = {
 
 const ingredientFoodGroups = FOOD_GROUPS;
 const ingredientSubstitutionGroups = SUBSTITUTION_GROUPS;
+const ingredientNutritionFields = [
+  "calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g",
+  "saturated_fat_per_100g", "sugar_per_100g", "fiber_per_100g", "sodium_mg_per_100g"
+];
 
 const parseAdminPagination = (query, defaultLimit = 15) => {
   const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
@@ -816,15 +820,12 @@ const listIngredients = async (req, res) => {
     const nutritionStatus = ["incomplete", "complete", "unreviewed"].includes(req.query.nutritionStatus) ? req.query.nutritionStatus : null;
     const params = [];
     const filters = [];
-    const completeNutrition = [
-      "calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g",
-      "saturated_fat_per_100g", "sugar_per_100g", "fiber_per_100g", "sodium_mg_per_100g"
-    ].map((column) => `i.${column} IS NOT NULL`).join(" AND ");
+    const completeNutrition = ingredientNutritionFields.map((column) => `i.${column} IS NOT NULL`).join(" AND ");
     const ingredientSelect = `
       i.id, i.nombre, i.food_group, i.substitution_group, i.fdc_id,
       i.calories_per_100g, i.protein_per_100g, i.carbs_per_100g, i.fat_per_100g,
       i.saturated_fat_per_100g, i.sugar_per_100g, i.fiber_per_100g, i.sodium_mg_per_100g,
-      i.nutrition_source, i.nutrition_reviewed_at,
+      i.nutrition_source, i.nutrition_source_reference, i.nutrition_reviewed_at,
       (SELECT COUNT(*)::int FROM receta_ingredientes ri WHERE ri.ingrediente_id = i.id) AS recipe_usage_count`;
     if (search) { params.push(`%${search}%`); filters.push(`i.nombre ILIKE $${params.length}`); }
     if (foodGroup) { params.push(foodGroup); filters.push(`i.food_group = $${params.length}`); }
@@ -899,17 +900,44 @@ const updateIngredient = async (req, res) => {
   if (!Number.isSafeInteger(id) || id <= 0 || !nombre || !foodGroup || !substitutionGroup) {
     return res.status(400).json({ message: "Ingrediente invalido" });
   }
+  const nutrition = normalizeIngredientNutritionInput(req.body.nutrition);
+  if (req.body.nutrition !== undefined && !nutrition) {
+    return res.status(400).json({ message: "El perfil nutricional requiere ocho valores validos, fuente y referencia" });
+  }
   try {
-    const result = await pool.query(
-      "UPDATE ingredientes SET nombre = $2, food_group = $3, substitution_group = $4 WHERE id = $1 RETURNING id, nombre, food_group, substitution_group",
-      [id, nombre, foodGroup, substitutionGroup]
-    );
+    const result = nutrition
+      ? await pool.query(
+        `UPDATE ingredientes SET nombre=$2, food_group=$3, substitution_group=$4,
+          fdc_id=NULL, calories_per_100g=$5, protein_per_100g=$6, carbs_per_100g=$7,
+          fat_per_100g=$8, saturated_fat_per_100g=$9, sugar_per_100g=$10,
+          fiber_per_100g=$11, sodium_mg_per_100g=$12, nutrition_source=$13,
+          nutrition_source_reference=$14, nutrition_reviewed_by=$15, nutrition_reviewed_at=NOW()
+         WHERE id=$1 RETURNING *`,
+        [id, nombre, foodGroup, substitutionGroup, ...ingredientNutritionFields.map((field) => nutrition[field]), nutrition.source, nutrition.reference, req.user.id]
+      )
+      : await pool.query(
+        "UPDATE ingredientes SET nombre = $2, food_group = $3, substitution_group = $4 WHERE id = $1 RETURNING *",
+        [id, nombre, foodGroup, substitutionGroup]
+      );
     if (!result.rows[0]) return res.status(404).json({ message: "Ingrediente no encontrado" });
     return res.json(result.rows[0]);
   } catch (error) {
     console.error("Error actualizando ingrediente:", error);
     return res.status(500).json({ error: "Error actualizando ingrediente" });
   }
+};
+
+const normalizeIngredientNutritionInput = (input) => {
+  if (!input || typeof input !== "object") return null;
+  const values = {};
+  for (const field of ingredientNutritionFields) {
+    const value = Number(input[field]);
+    if (input[field] === "" || input[field] === null || input[field] === undefined || !Number.isFinite(value) || value < 0) return null;
+    values[field] = value;
+  }
+  const source = ["manual", "professional"].includes(input.source) ? input.source : null;
+  const reference = typeof input.reference === "string" ? input.reference.trim().slice(0, 1000) : "";
+  return source && reference ? { ...values, source, reference } : null;
 };
 
 const deleteIngredient = async (req, res) => {
