@@ -6,6 +6,7 @@ const { getVisionUsagePolicy } = require("../services/visionUsageService");
 const { validateRecipeTemplate } = require("../services/recipeCatalogTemplateService");
 const { buildRecipeCatalogPreview, importRecipeCatalog } = require("../services/recipeCatalogImportService");
 const { getNutritionWorklist, importNutritionPatch, resolveNutritionPatch } = require("../services/recipeNutritionWorklistService");
+const { calculateRecipeNutrition } = require("../services/recipeNutritionCalculationService");
 const { FOOD_GROUPS, SUBSTITUTION_GROUPS } = require("../services/ingredientTaxonomy");
 
 const getOperationsOverview = async (req, res) => {
@@ -547,6 +548,16 @@ const executeRecipeNutritionImport = async (req, res) => {
   }
 };
 
+const previewCalculatedRecipeNutrition = async (req, res) => {
+  try {
+    return res.json(await calculateRecipeNutrition(pool, req.body));
+  } catch (error) {
+    if (error.code === "NUTRITION_CALCULATION_INCOMPLETE") return res.status(422).json({ code: error.code, message: error.message, details: error.details });
+    console.error("Error calculando nutricion de receta:", error);
+    return res.status(500).json({ error: "No se pudo calcular la nutricion" });
+  }
+};
+
 const previewRecipeCatalogImport = async (req, res) => {
   try {
     return res.json(await buildRecipeCatalogPreview(pool, req.body));
@@ -900,6 +911,7 @@ module.exports = {
   downloadRecipeNutritionWorklist,
   previewRecipeNutritionImport,
   executeRecipeNutritionImport,
+  previewCalculatedRecipeNutrition,
   previewRecipeCatalogImport,
   executeRecipeCatalogImport,
   createRecipe,

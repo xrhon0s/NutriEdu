@@ -280,6 +280,8 @@ Para enriquecer recetas existentes sin reconstruir sus ingredientes, `GET /api/a
 
 La creación y edición administrativa de recetas acepta ingredientes como IDs históricos o como `{ id, amount, unit, amount_g }`. `amount` y `unit` deben aparecer juntos; `amount_g` es opcional pero debe ser positivo. Las respuestas administrativas devuelven estos tres campos para que editar una receta no pierda la cuantificación existente.
 
+`POST /api/admin/recipes/calculate-nutrition` calcula valores por porción desde gramos y perfiles nutricionales por 100 g. Rechaza ingredientes inexistentes, incompletos o sin revisión; no estima faltantes. La respuesta incluye una referencia determinista con hash corto e IDs/fechas de los perfiles usados. Cambiar después gramos, porciones o nutrientes invalida la procedencia calculada en la interfaz.
+
 La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): `example.catalog.json` es importable desde el panel y las tres hojas CSV sirven para preparación tabular. El parser CSV directo sigue pendiente. El archivo JSON admite hasta 2 MB, 200 recetas y 500 definiciones de ingredientes.
 
 ### Intake de imagenes de comida
@@ -501,6 +503,7 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `GET /api/admin/recipes/nutrition-worklist?limit=200`
 - `POST /api/admin/recipes/nutrition-import/preview`
 - `POST /api/admin/recipes/nutrition-import`
+- `POST /api/admin/recipes/calculate-nutrition`
 - `POST /api/admin/recipes`
 - `PUT /api/admin/recipes/:id`
 - `DELETE /api/admin/recipes/:id`
@@ -779,7 +782,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen diecinueve contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion nutricional, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen veinte contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion y calculo nutricional, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. Al 12 de septiembre de 2026, las 50 recetas locales tienen calorias, pero ninguna tiene porcion, macronutrientes completos o fuente registrada; esos valores deben cargarse con procedencia verificable antes de usar el ranking para metas nutricionales estrictas.
 

@@ -23,6 +23,7 @@ const {
   downloadRecipeNutritionWorklist,
   previewRecipeNutritionImport,
   executeRecipeNutritionImport,
+  previewCalculatedRecipeNutrition,
   previewRecipeCatalogImport,
   executeRecipeCatalogImport,
   updateIngredient,
@@ -52,6 +53,7 @@ router.get("/recipes/template/:file", downloadRecipeCatalogTemplate);
 router.get("/recipes/nutrition-worklist", downloadRecipeNutritionWorklist);
 router.post("/recipes/nutrition-import/preview", previewRecipeNutritionImport);
 router.post("/recipes/nutrition-import", executeRecipeNutritionImport);
+router.post("/recipes/calculate-nutrition", previewCalculatedRecipeNutrition);
 router.post("/recipes/template/validate", validateRecipeCatalogTemplate);
 router.post("/recipes/import/preview", previewRecipeCatalogImport);
 router.post("/recipes/import", executeRecipeCatalogImport);
