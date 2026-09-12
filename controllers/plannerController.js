@@ -150,6 +150,13 @@ const getWeeklyPlan = async (req, res) => {
         r.nombre AS receta_nombre,
         r.descripcion,
         r.calorias,
+        r.protein_g,
+        r.carbs_g,
+        r.fat_g,
+        r.saturated_fat_g,
+        r.sugar_g,
+        r.fiber_g,
+        r.sodium_mg,
         r.tiempo_preparacion,
         r.nivel_salud
       FROM plan_semanal ps

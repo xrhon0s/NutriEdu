@@ -374,6 +374,12 @@ Estados posibles:
 
 Las rutas de planificador requieren JWT y usan `req.user.id`.
 
+`GET /api/planner/:userId` incluye los nutrientes registrados de cada receta (`calorias`, `protein_g`, `carbs_g`, `fat_g`, `saturated_fat_g`, `sugar_g`, `fiber_g` y `sodium_mg`). Los valores pueden ser nulos cuando el catalogo aun no ha sido completado; los clientes deben declarar esa cobertura en lugar de estimarla.
+
+```bash
+npm run test:planner-nutrition
+```
+
 La lista conserva por defecto el arreglo histórico de ingredientes para no romper clientes mobile existentes. Web solicita `?detailed=true` y recibe:
 
 - ingredientes agrupables por `foodGroup`;
@@ -741,7 +747,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen quince contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, plantilla, importacion de catalogo, compras y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen dieciseis contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, plantilla, importacion de catalogo, compras, nutricion del plan y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 ## Despliegue en Render
 
