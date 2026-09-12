@@ -1,7 +1,11 @@
+const path = require("path");
+const pilotEnvironmentFile = process.env.PILOT_ENV_FILE;
+if (pilotEnvironmentFile) require("dotenv").config({ path: path.resolve(pilotEnvironmentFile), override: true });
 const pool = require("../database/db");
 const { calculateFromIngredientProfiles } = require("../services/recipeNutritionCalculationService");
 
 const PILOT_RECIPE = "Yogur con almendras";
+const PILOT_REVIEWED_AT = "2026-09-12T12:00:00.000Z";
 const PILOT_INGREDIENTS = [
   {
     name: "yogur natural", fdcId: 171284, amountG: 170,
@@ -32,6 +36,11 @@ const loadReviewer = async (client) => {
 
 const run = async () => {
   const apply = process.argv.includes("--apply");
+  const databaseHost = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : process.env.DB_HOST;
+  const localDatabase = ["localhost", "127.0.0.1", "::1"].includes(databaseHost);
+  if (apply && !localDatabase && !process.env.PILOT_REVIEWER_EMAIL?.trim()) {
+    throw new Error("PILOT_REVIEWER_EMAIL es obligatorio al aplicar el piloto fuera de una base local.");
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -51,7 +60,7 @@ const run = async () => {
       throw new Error("La composición actual de la receta no coincide exactamente con el piloto versionado.");
     }
 
-    const reviewedAt = new Date().toISOString();
+    const reviewedAt = PILOT_REVIEWED_AT;
     const profiles = [];
     for (const item of PILOT_INGREDIENTS) {
       const ingredient = byName.get(item.name);
@@ -98,4 +107,4 @@ const run = async () => {
 
 if (require.main === module) run().catch((error) => { console.error(error); process.exitCode = 1; });
 
-module.exports = { PILOT_INGREDIENTS, PILOT_RECIPE };
+module.exports = { PILOT_INGREDIENTS, PILOT_RECIPE, PILOT_REVIEWED_AT };

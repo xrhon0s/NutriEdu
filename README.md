@@ -754,11 +754,10 @@ Para mantener separadas las credenciales locales y de produccion, guarda tempora
 
 ```bash
 MIGRATION_ENV_FILE=.env.production.local npm run migrate:status
-MIGRATION_ENV_FILE=.env.production.local npm run migrate:baseline -- 001 002 003 004
-MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 005 006 007 008 009 010 011
+MIGRATION_ENV_FILE=.env.production.local npm run migrate -- 013 014
 ```
 
-El ejemplo anterior supone que `001-004` ya existen y `005-011` siguen pendientes. Ajusta ambas listas al resultado de la inspeccion de produccion; nunca hagas baseline de una version cuyo verificador falle.
+El ejemplo anterior refleja el último estado verificado: `001-012` aplicadas y `013-014` pendientes. Confirma siempre con `migrate:status`; si fueron ejecutadas manualmente, usa `migrate:baseline -- 013 014` y deja que los verificadores decidan. Nunca hagas baseline de una version cuyo verificador falle.
 
 ### Sincronizar un perfil entre desarrollo y produccion
 
@@ -793,9 +792,11 @@ node --check routes/medicalDocumentRoutes.js
 
 Existen veintidos contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion, calculo y piloto nutricional, USDA FoodData Central, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
-La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. El reporte incluye cobertura de recetas, doce ingredientes priorizados por uso y diez recetas ordenadas por bloqueadores de perfiles/cantidades. Al 12 de septiembre de 2026, las 50 recetas locales tienen calorias, pero ninguna tiene porcion, macronutrientes completos o fuente registrada; esos valores deben cargarse con procedencia verificable antes de usar el ranking para metas nutricionales estrictas.
+La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. El reporte incluye cobertura de recetas, doce ingredientes priorizados por uso y diez recetas ordenadas por bloqueadores de perfiles/cantidades. Antes del piloto, las 50 recetas locales tenían calorías, pero ninguna tenía porción, macronutrientes completos o fuente registrada.
 
 El primer lote reproducible está en `scripts/applyNutritionPilot.js`. `npm run pilot:nutrition` valida y calcula dentro de una transacción que termina en rollback; `npm run pilot:nutrition -- --apply` confirma la escritura. El piloto documenta los FDC ID y cantidades de “Yogur con almendras”, exige una identidad exacta de receta/ingredientes, toma un administrador como revisor y aplica perfiles, relaciones y nutrición calculada atómicamente. Puede fijarse el revisor con `PILOT_REVIEWER_EMAIL`.
+
+Para simular o aplicar contra otro ambiente, usa `PILOT_ENV_FILE=.env.production.local`. Fuera de localhost, `PILOT_REVIEWER_EMAIL` es obligatorio; esto evita atribuir una revisión de producción a la primera cuenta administrativa encontrada.
 
 Después del piloto local, 1/50 recetas tiene porción, ocho nutrientes y procedencia, y 3/80 ingredientes tienen perfil USDA completo. El motor la evalúa con confianza completa y sin nutrientes ausentes; las restricciones incompatibles siguen excluyéndola antes del ranking.
 
