@@ -196,6 +196,8 @@ La respuesta es generica aunque el correo no exista, para no revelar cuentas reg
 
 Registro, login, solicitud y confirmación de recuperación están protegidos por límites independientes por IP. Login permite 10 fallos en 15 minutos y no cuenta respuestas exitosas; recuperación permite 5 solicitudes por hora. Las respuestas bloqueadas usan HTTP `429`, código `RATE_LIMITED`, tiempo de reintento y headers estándar. Los valores se ajustan con `*_RATE_LIMIT_*`; Render usa `TRUST_PROXY_HOPS=1` para identificar correctamente la IP detrás de su proxy.
 
+Todas las solicitudes reciben `X-Request-ID`. El backend emite logs JSON con ruta sin query string, estado, duración y usuario autenticado cuando existe; nunca registra body, contraseña, token ni correo. Rutas inexistentes responden `404` JSON, CORS denegado responde `403` y errores inesperados responden `500` con un ID correlacionable. La cabecera `X-Powered-By` está desactivada.
+
 #### `POST /api/users/reset-password`
 
 Cambia la contrasena usando el token del correo.
@@ -792,7 +794,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen veintidos contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion, calculo y piloto nutricional, USDA FoodData Central, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen veinticuatro contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, rate limiting, observabilidad, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion, calculo y piloto nutricional, USDA FoodData Central, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. El reporte incluye cobertura de recetas, doce ingredientes priorizados por uso y diez recetas ordenadas por bloqueadores de perfiles/cantidades. Antes del piloto, las 50 recetas locales tenían calorías, pero ninguna tenía porción, macronutrientes completos o fuente registrada.
 

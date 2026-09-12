@@ -11,8 +11,10 @@ const profileRoutes = require("./routes/profileRoutes");
 const foodAnalysisRoutes = require("./routes/foodAnalysisRoutes");
 const medicalDocumentRoutes = require("./routes/medicalDocumentRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const { requestContext } = require("./middleware/requestContext");
 
 const app = express();
+app.disable("x-powered-by");
 const PORT = process.env.PORT || 3000;
 const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS, 10) || (process.env.NODE_ENV === "production" ? 1 : 0);
 if (trustProxyHops > 0) app.set("trust proxy", trustProxyHops);
@@ -21,6 +23,7 @@ const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
   .map((origin) => origin.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
+app.use(requestContext);
 app.use(cors({
   origin(origin, callback) {
     const normalizedOrigin = origin?.replace(/\/$/, "");
@@ -29,7 +32,10 @@ app.use(cors({
       return callback(null, true);
     }
 
-    return callback(new Error("Origen no permitido por CORS"));
+    const error = new Error("Origen no permitido por CORS");
+    error.status = 403;
+    error.code = "CORS_ORIGIN_DENIED";
+    return callback(error);
   },
   credentials: true
 }));
@@ -44,11 +50,16 @@ app.use("/api/food-analysis", foodAnalysisRoutes);
 app.use("/api/medical-documents", medicalDocumentRoutes);
 app.use("/api/notifications", notificationRoutes);
 
-app.use((error, _req, res, next) => {
+app.use((_req, res) => res.status(404).json({ code: "NOT_FOUND", message: "Ruta no encontrada" }));
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
   if (error?.type === "entity.too.large") {
-    return res.status(413).json({ message: "El archivo JSON supera el limite de 2 MB" });
+    return res.status(413).json({ code: "PAYLOAD_TOO_LARGE", message: "El archivo JSON supera el limite de 2 MB", requestId: req.requestId });
   }
-  return next(error);
+  const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
+  console.error(JSON.stringify({ timestamp: new Date().toISOString(), level: status >= 500 ? "error" : "warn", event: status >= 500 ? "unhandled_error" : "request_error", requestId: req.requestId, code: error?.code || "INTERNAL_ERROR", message: error?.message || "Unknown error" }));
+  return res.status(status).json({ code: error?.code || "INTERNAL_ERROR", message: status >= 500 ? "Ocurrió un error interno" : error.message, requestId: req.requestId });
 });
 
 app.listen(PORT, () => {
