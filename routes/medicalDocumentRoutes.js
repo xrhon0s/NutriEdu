@@ -11,6 +11,7 @@ const {
   reviewMedicalDocumentExtraction
 } = require("../controllers/medicalDocumentController");
 const verifyToken = require("../middleware/verifyToken");
+const { medicalDocumentUploadRateLimit } = require("../middleware/uploadRateLimits");
 
 const router = express.Router();
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
@@ -47,7 +48,7 @@ const receiveDocument = (req, res, next) => {
 };
 
 router.use(verifyToken);
-router.post("/intake", receiveDocument, intakeMedicalDocument);
+router.post("/intake", medicalDocumentUploadRateLimit, receiveDocument, intakeMedicalDocument);
 router.post("/review", reviewMedicalDocumentExtraction);
 router.get("/retention-policy", getMedicalDocumentRetentionPolicy);
 router.get("/history", listMedicalDocumentHistory);

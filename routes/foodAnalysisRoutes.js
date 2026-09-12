@@ -7,6 +7,7 @@ const {
   reviewFoodAnalysis
 } = require("../controllers/foodAnalysisController");
 const verifyToken = require("../middleware/verifyToken");
+const { foodImageUploadRateLimit } = require("../middleware/uploadRateLimits");
 
 const router = express.Router();
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -46,8 +47,8 @@ const receiveImage = (req, res, next) => {
 
 router.use(verifyToken);
 router.get("/status", getVisionStatus);
-router.post("/intake", receiveImage, intakeFoodImage);
-router.post("/analyze", receiveImage, analyzeFoodImage);
+router.post("/intake", foodImageUploadRateLimit, receiveImage, intakeFoodImage);
+router.post("/analyze", foodImageUploadRateLimit, receiveImage, analyzeFoodImage);
 router.post("/review", reviewFoodAnalysis);
 
 module.exports = router;
