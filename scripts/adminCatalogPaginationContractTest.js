@@ -5,7 +5,7 @@ const fakePool = {
     if (sql.includes("COUNT(*)::int AS total FROM recetas")) return { rows: [{ total: 18 }] };
     if (sql.includes("json_agg") && sql.includes("LIMIT")) return { rows: [{ id: 8, nombre: "Sopa", ingredients: [] }] };
     if (sql.includes("COUNT(*)::int AS total FROM ingredientes")) return { rows: [{ total: 22 }] };
-    if (sql.includes("SELECT id, nombre, food_group, substitution_group FROM ingredientes") && sql.includes("LIMIT")) {
+    if (sql.includes("FROM ingredientes") && sql.includes("LIMIT") && !sql.includes("COUNT(*)")) {
       assert.equal(params[0], "%pollo%");
       assert.equal(params[1], "protein");
       assert.equal(params[2], "poultry");

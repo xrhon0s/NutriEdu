@@ -120,6 +120,7 @@ La prueba crea un usuario temporal, obtiene un JWT mediante el login real, verif
 - `FRONTEND_URL`: origen permitido por CORS y URL usada para construir enlaces de recuperacion de contrasena. Puede contener varios origenes separados por coma.
 - `RESEND_API_KEY`: API key de Resend.
 - `RESEND_FROM_EMAIL`: remitente usado por Resend.
+- `USDA_FDC_API_KEY`: clave gratuita de data.gov para FoodData Central; nunca se expone al frontend.
 - `VISION_PROVIDER`: `disabled` por defecto u `openai` para activar analisis real.
 - `OPENAI_API_KEY`: credencial del servidor para el adaptador OpenAI; nunca debe enviarse a mobile.
 - `OPENAI_VISION_MODEL`: modelo visual usado por el adaptador. Valor predeterminado: `gpt-5-mini`.
@@ -281,6 +282,8 @@ Para enriquecer recetas existentes sin reconstruir sus ingredientes, `GET /api/a
 La creación y edición administrativa de recetas acepta ingredientes como IDs históricos o como `{ id, amount, unit, amount_g }`. `amount` y `unit` deben aparecer juntos; `amount_g` es opcional pero debe ser positivo. Las respuestas administrativas devuelven estos tres campos para que editar una receta no pierda la cuantificación existente.
 
 `POST /api/admin/recipes/calculate-nutrition` calcula valores por porción desde gramos y perfiles nutricionales por 100 g. Rechaza ingredientes inexistentes, incompletos o sin revisión; no estima faltantes. La respuesta incluye una referencia determinista con hash corto e IDs/fechas de los perfiles usados. Cambiar después gramos, porciones o nutrientes invalida la procedencia calculada en la interfaz.
+
+La administración de ingredientes consulta USDA FoodData Central mediante `GET /api/admin/ingredients/fdc/search?q=`. La búsqueda se limita a `Foundation` y `SR Legacy` y devuelve candidatos, no una selección automática. `POST /api/admin/ingredients/:id/fdc` vuelve a consultar el detalle elegido, exige los ocho nutrientes por 100 g y registra `fdc_id`, URL, administrador y fecha. La clave `USDA_FDC_API_KEY` permanece únicamente en backend.
 
 La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): `example.catalog.json` es importable desde el panel y las tres hojas CSV sirven para preparación tabular. El parser CSV directo sigue pendiente. El archivo JSON admite hasta 2 MB, 200 recetas y 500 definiciones de ingredientes.
 
@@ -504,6 +507,8 @@ Las rutas administrativas requieren usuario con rol `administrador`.
 - `POST /api/admin/recipes/nutrition-import/preview`
 - `POST /api/admin/recipes/nutrition-import`
 - `POST /api/admin/recipes/calculate-nutrition`
+- `GET /api/admin/ingredients/fdc/search?q=chicken`
+- `POST /api/admin/ingredients/:id/fdc`
 - `POST /api/admin/recipes`
 - `PUT /api/admin/recipes/:id`
 - `DELETE /api/admin/recipes/:id`
@@ -693,7 +698,7 @@ La procedencia nutricional y las cantidades base requieren:
 migrations/010_recipe_nutrition_provenance.sql
 ```
 
-Agrega porcion, numero de porciones, fuente y fecha de revision en recetas; cantidades y unidades en la relacion receta-ingrediente; e identificadores y nutrientes por 100 g en ingredientes. Los campos preparan un calculo auditable, pero la carga automatica desde USDA FoodData Central todavia no esta implementada.
+Agrega porcion, numero de porciones, fuente y fecha de revision en recetas; cantidades y unidades en la relacion receta-ingrediente; e identificadores y nutrientes por 100 g en ingredientes. La carga asistida desde USDA FoodData Central está implementada con selección humana y validación completa antes de guardar.
 
 La importacion idempotente requiere:
 
@@ -782,7 +787,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen veinte contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion y calculo nutricional, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen veintiun contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion y calculo nutricional, USDA FoodData Central, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. Al 12 de septiembre de 2026, las 50 recetas locales tienen calorias, pero ninguna tiene porcion, macronutrientes completos o fuente registrada; esos valores deben cargarse con procedencia verificable antes de usar el ranking para metas nutricionales estrictas.
 
@@ -807,6 +812,7 @@ JWT_SECRET=clave_larga_y_secreta
 FRONTEND_URL=https://tu-frontend.vercel.app
 RESEND_API_KEY=re_tu_api_key
 RESEND_FROM_EMAIL=NutriEdu <onboarding@resend.dev>
+USDA_FDC_API_KEY=tu_api_key_data_gov
 VISION_PROVIDER=disabled
 # Para habilitar vision real:
 # VISION_PROVIDER=openai

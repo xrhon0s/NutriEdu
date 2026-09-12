@@ -7,6 +7,7 @@ const { validateRecipeTemplate } = require("../services/recipeCatalogTemplateSer
 const { buildRecipeCatalogPreview, importRecipeCatalog } = require("../services/recipeCatalogImportService");
 const { getNutritionWorklist, importNutritionPatch, resolveNutritionPatch } = require("../services/recipeNutritionWorklistService");
 const { calculateRecipeNutrition } = require("../services/recipeNutritionCalculationService");
+const { searchFdcFoods, updateIngredientFromFdc } = require("../services/usdaFoodDataService");
 const { FOOD_GROUPS, SUBSTITUTION_GROUPS } = require("../services/ingredientTaxonomy");
 
 const getOperationsOverview = async (req, res) => {
@@ -819,18 +820,42 @@ const listIngredients = async (req, res) => {
     if (substitutionGroup) { params.push(substitutionGroup); filters.push(`substitution_group = $${params.length}`); }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     if (req.query.all === "true") {
-      const result = await pool.query(`SELECT id, nombre, food_group, substitution_group FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre`, params);
+      const result = await pool.query(`SELECT id, nombre, food_group, substitution_group, fdc_id, nutrition_source, nutrition_reviewed_at FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre`, params);
       return res.json({ items: result.rows, foodGroups: ingredientFoodGroups, substitutionGroups: ingredientSubstitutionGroups });
     }
     const { page, limit, offset } = parseAdminPagination(req.query);
     const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM ingredientes ${where}`, params);
     params.push(limit, offset);
-    const result = await pool.query(`SELECT id, nombre, food_group, substitution_group FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+    const result = await pool.query(`SELECT id, nombre, food_group, substitution_group, fdc_id, nutrition_source, nutrition_reviewed_at FROM ingredientes ${where} ORDER BY food_group, substitution_group, nombre LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
     const total = totalResult.rows[0].total;
     return res.json({ items: result.rows, foodGroups: ingredientFoodGroups, substitutionGroups: ingredientSubstitutionGroups, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error obteniendo ingredientes" });
+  }
+};
+
+const searchIngredientFoodData = async (req, res) => {
+  try {
+    return res.json(await searchFdcFoods(req.query.q));
+  } catch (error) {
+    if (error.code?.startsWith("FDC_") || error.code === "INVALID_FDC_QUERY") return res.status(error.status || 502).json({ code: error.code, message: error.message, details: error.details });
+    console.error("Error buscando ingrediente en USDA:", error);
+    return res.status(500).json({ error: "No se pudo consultar FoodData Central" });
+  }
+};
+
+const applyIngredientFoodData = async (req, res) => {
+  const ingredientId = Number(req.params.id);
+  if (!Number.isSafeInteger(ingredientId) || ingredientId <= 0) return res.status(400).json({ message: "Ingrediente invalido" });
+  try {
+    return res.json(await updateIngredientFromFdc(pool, { ingredientId, fdcId: req.body.fdcId, userId: req.user.id }));
+  } catch (error) {
+    if (error.code?.startsWith("FDC_") || ["INVALID_FDC_ID", "UNSUPPORTED_FDC_TYPE", "INCOMPLETE_FDC_PROFILE", "INGREDIENT_NOT_FOUND"].includes(error.code)) {
+      return res.status(error.status || 502).json({ code: error.code, message: error.message, details: error.details });
+    }
+    console.error("Error aplicando ingrediente USDA:", error);
+    return res.status(500).json({ error: "No se pudo actualizar el ingrediente desde FoodData Central" });
   }
 };
 
@@ -918,6 +943,8 @@ module.exports = {
   updateRecipe,
   deleteRecipe,
   listIngredients,
+  searchIngredientFoodData,
+  applyIngredientFoodData,
   createIngredient,
   updateIngredient,
   deleteIngredient

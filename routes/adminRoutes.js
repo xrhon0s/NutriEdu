@@ -17,6 +17,8 @@ const {
   saveRestrictionAdmin,
   listVisionUsage,
   listIngredients,
+  searchIngredientFoodData,
+  applyIngredientFoodData,
   listRecipes,
   validateRecipeCatalogTemplate,
   downloadRecipeCatalogTemplate,
@@ -58,6 +60,8 @@ router.post("/recipes/template/validate", validateRecipeCatalogTemplate);
 router.post("/recipes/import/preview", previewRecipeCatalogImport);
 router.post("/recipes/import", executeRecipeCatalogImport);
 router.get("/ingredients", listIngredients);
+router.get("/ingredients/fdc/search", searchIngredientFoodData);
+router.post("/ingredients/:id/fdc", applyIngredientFoodData);
 router.post("/recipes", createRecipe);
 router.put("/recipes/:id", updateRecipe);
 router.delete("/recipes/:id", deleteRecipe);
