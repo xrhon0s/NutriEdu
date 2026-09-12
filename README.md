@@ -194,6 +194,8 @@ Solicita un correo de recuperacion.
 
 La respuesta es generica aunque el correo no exista, para no revelar cuentas registradas.
 
+Registro, login, solicitud y confirmación de recuperación están protegidos por límites independientes por IP. Login permite 10 fallos en 15 minutos y no cuenta respuestas exitosas; recuperación permite 5 solicitudes por hora. Las respuestas bloqueadas usan HTTP `429`, código `RATE_LIMITED`, tiempo de reintento y headers estándar. Los valores se ajustan con `*_RATE_LIMIT_*`; Render usa `TRUST_PROXY_HOPS=1` para identificar correctamente la IP detrás de su proxy.
+
 #### `POST /api/users/reset-password`
 
 Cambia la contrasena usando el token del correo.

@@ -14,6 +14,8 @@ const notificationRoutes = require("./routes/notificationRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS, 10) || (process.env.NODE_ENV === "production" ? 1 : 0);
+if (trustProxyHops > 0) app.set("trust proxy", trustProxyHops);
 const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim().replace(/\/$/, ""))

@@ -12,11 +12,17 @@ const {
   deleteAccount
 } = require("../controllers/userController");
 const verifyToken = require("../middleware/verifyToken");
+const {
+  loginRateLimit,
+  registerRateLimit,
+  forgotPasswordRateLimit,
+  resetPasswordRateLimit
+} = require("../middleware/authRateLimits");
 
-router.post("/register", registerUser);
-router.post("/login", loginUser);
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password", resetPassword);
+router.post("/register", registerRateLimit, registerUser);
+router.post("/login", loginRateLimit, loginUser);
+router.post("/forgot-password", forgotPasswordRateLimit, forgotPassword);
+router.post("/reset-password", resetPasswordRateLimit, resetPassword);
 router.post("/restrictions", verifyToken, addRestrictions);
 router.get("/restrictions/:userId", verifyToken, getUserRestrictions);
 router.get("/restrictions", verifyToken, getAllRestrictions);
