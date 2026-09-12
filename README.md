@@ -276,6 +276,8 @@ Sin `paginated=true`, el endpoint conserva el arreglo historico usado por el fro
 
 `POST /api/admin/recipes/import/preview` resuelve creaciones, actualizaciones, adopción segura de filas históricas y conflictos sin escribir. `POST /api/admin/recipes/import` repite esa resolución bajo un advisory lock, guarda ingredientes, recetas y cantidades en una sola transacción y registra la operación en `recipe_catalog_imports`. Repetir las mismas claves actualiza filas en vez de duplicarlas.
 
+Para enriquecer recetas existentes sin reconstruir sus ingredientes, `GET /api/admin/recipes/nutrition-worklist` descarga un JSON `nutrition_patch` con los valores actuales y `null` donde falta información. `POST /api/admin/recipes/nutrition-import/preview` exige porción, ocho nutrientes y referencia verificable; `POST /api/admin/recipes/nutrition-import` actualiza solo esos campos bajo transacción y auditoría. Las relaciones de ingredientes no se modifican.
+
 La plantilla editable está en [templates/recipe_catalog](templates/recipe_catalog): `example.catalog.json` es importable desde el panel y las tres hojas CSV sirven para preparación tabular. El parser CSV directo sigue pendiente. El archivo JSON admite hasta 2 MB, 200 recetas y 500 definiciones de ingredientes.
 
 ### Intake de imagenes de comida
@@ -494,6 +496,9 @@ El contexto explicable de recomendaciones incluye `progress.latestMeasurementDat
 Las rutas administrativas requieren usuario con rol `administrador`.
 
 - `GET /api/admin/recipes?page=1&limit=15&search=&nutritionStatus=incomplete|complete|unreviewed`
+- `GET /api/admin/recipes/nutrition-worklist?limit=200`
+- `POST /api/admin/recipes/nutrition-import/preview`
+- `POST /api/admin/recipes/nutrition-import`
 - `POST /api/admin/recipes`
 - `PUT /api/admin/recipes/:id`
 - `DELETE /api/admin/recipes/:id`
@@ -772,7 +777,7 @@ node --check controllers/medicalDocumentController.js
 node --check routes/medicalDocumentRoutes.js
 ```
 
-Existen dieciocho contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
+Existen diecinueve contratos automatizados para vision, limites de uso, documentos medicos, administracion, credenciales, seguridad de recetas, recomendaciones, favoritos, plantilla, importacion de catalogo, actualizacion nutricional, compras, nutricion del plan, seguimiento y sincronizacion de perfiles. El smoke administrativo comprueba ademas preview, creacion, actualizacion idempotente, cantidades y limpieza real contra PostgreSQL.
 
 La cobertura nutricional real se consulta sin modificar datos mediante `npm run audit:nutrition`. Al 12 de septiembre de 2026, las 50 recetas locales tienen calorias, pero ninguna tiene porcion, macronutrientes completos o fuente registrada; esos valores deben cargarse con procedencia verificable antes de usar el ranking para metas nutricionales estrictas.
 

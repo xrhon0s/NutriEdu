@@ -20,6 +20,9 @@ const {
   listRecipes,
   validateRecipeCatalogTemplate,
   downloadRecipeCatalogTemplate,
+  downloadRecipeNutritionWorklist,
+  previewRecipeNutritionImport,
+  executeRecipeNutritionImport,
   previewRecipeCatalogImport,
   executeRecipeCatalogImport,
   updateIngredient,
@@ -46,6 +49,9 @@ router.patch("/restrictions/:id", saveRestrictionAdmin);
 router.get("/vision-usage", listVisionUsage);
 router.get("/recipes", listRecipes);
 router.get("/recipes/template/:file", downloadRecipeCatalogTemplate);
+router.get("/recipes/nutrition-worklist", downloadRecipeNutritionWorklist);
+router.post("/recipes/nutrition-import/preview", previewRecipeNutritionImport);
+router.post("/recipes/nutrition-import", executeRecipeNutritionImport);
 router.post("/recipes/template/validate", validateRecipeCatalogTemplate);
 router.post("/recipes/import/preview", previewRecipeCatalogImport);
 router.post("/recipes/import", executeRecipeCatalogImport);

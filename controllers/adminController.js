@@ -5,6 +5,7 @@ const { getVisionProvider } = require("../services/vision");
 const { getVisionUsagePolicy } = require("../services/visionUsageService");
 const { validateRecipeTemplate } = require("../services/recipeCatalogTemplateService");
 const { buildRecipeCatalogPreview, importRecipeCatalog } = require("../services/recipeCatalogImportService");
+const { getNutritionWorklist, importNutritionPatch, resolveNutritionPatch } = require("../services/recipeNutritionWorklistService");
 const { FOOD_GROUPS, SUBSTITUTION_GROUPS } = require("../services/ingredientTaxonomy");
 
 const getOperationsOverview = async (req, res) => {
@@ -516,6 +517,36 @@ const downloadRecipeCatalogTemplate = (req, res) => {
   return res.download(path.join(__dirname, "..", "templates", "recipe_catalog", fileName), fileName);
 };
 
+const downloadRecipeNutritionWorklist = async (req, res) => {
+  try {
+    const worklist = await getNutritionWorklist(pool, req.query.limit);
+    res.attachment("nutriedu-nutrition-worklist.json");
+    return res.json(worklist);
+  } catch (error) {
+    console.error("Error generando pendientes nutricionales:", error);
+    return res.status(500).json({ error: "No se pudo generar la plantilla de pendientes" });
+  }
+};
+
+const previewRecipeNutritionImport = async (req, res) => {
+  try {
+    return res.json(await resolveNutritionPatch(pool, req.body));
+  } catch (error) {
+    console.error("Error previsualizando actualizacion nutricional:", error);
+    return res.status(500).json({ error: "No se pudo previsualizar la actualizacion nutricional" });
+  }
+};
+
+const executeRecipeNutritionImport = async (req, res) => {
+  try {
+    const result = await importNutritionPatch(pool, req.body, req.user.id);
+    return res.status(result.imported ? 201 : 422).json(result);
+  } catch (error) {
+    console.error("Error importando actualizacion nutricional:", error);
+    return res.status(500).json({ error: "No se aplicaron cambios nutricionales" });
+  }
+};
+
 const previewRecipeCatalogImport = async (req, res) => {
   try {
     return res.json(await buildRecipeCatalogPreview(pool, req.body));
@@ -563,8 +594,10 @@ const normalizeRecipeInput = (body) => {
     || ingredientIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
   ) return null;
   const nutritionSource = recipeNutritionSources.has(body.nutrition_source) ? body.nutrition_source : "unknown";
+  const nutritionSourceReference = typeof body.nutrition_source_reference === "string" ? body.nutrition_source_reference.trim().slice(0, 1000) : "";
+  if (nutritionSource !== "unknown" && !nutritionSourceReference) return null;
   const ingredients = [...new Set(ingredientIds)];
-  return { nombre, descripcion: descripcion || null, ...numeric, nivel_salud: nivelSalud, servings, nutrition_source: nutritionSource, ingredients };
+  return { nombre, descripcion: descripcion || null, ...numeric, nivel_salud: nivelSalud, servings, nutrition_source: nutritionSource, nutrition_source_reference: nutritionSource === "unknown" ? null : nutritionSourceReference, ingredients };
 };
 
 // Listar recetas con ingredientes
@@ -621,15 +654,18 @@ const createRecipe = async (req, res) => {
       `INSERT INTO recetas(
          nombre, descripcion, calorias, tiempo_preparacion, nivel_salud,
          protein_g, carbs_g, fat_g, saturated_fat_g, sugar_g, fiber_g, sodium_mg,
-         serving_size_g, servings, nutrition_source, nutrition_reviewed_at
+         serving_size_g, servings, nutrition_source, nutrition_source_reference,
+         nutrition_reviewed_by, nutrition_reviewed_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+         CASE WHEN $15 = 'unknown' THEN NULL ELSE $17 END,
          CASE WHEN $15 = 'unknown' THEN NULL ELSE CURRENT_TIMESTAMP END
        ) RETURNING *`,
       [
         input.nombre, input.descripcion, input.calorias, input.tiempo_preparacion, input.nivel_salud,
         input.protein_g, input.carbs_g, input.fat_g, input.saturated_fat_g, input.sugar_g,
-        input.fiber_g, input.sodium_mg, input.serving_size_g, input.servings, input.nutrition_source
+        input.fiber_g, input.sodium_mg, input.serving_size_g, input.servings, input.nutrition_source,
+        input.nutrition_source_reference, req.user.id
       ]
     );
 
@@ -683,15 +719,16 @@ const updateRecipe = async (req, res) => {
          nombre=$1, descripcion=$2, calorias=$3, tiempo_preparacion=$4, nivel_salud=$5,
          protein_g=$6, carbs_g=$7, fat_g=$8, saturated_fat_g=$9, sugar_g=$10,
          fiber_g=$11, sodium_mg=$12, serving_size_g=$13, servings=$14,
-         nutrition_source=$15,
+         nutrition_source=$15, nutrition_source_reference=$16,
+         nutrition_reviewed_by=CASE WHEN $15 = 'unknown' THEN NULL ELSE $17 END,
          nutrition_reviewed_at=CASE WHEN $15 = 'unknown' THEN NULL ELSE CURRENT_TIMESTAMP END
-       WHERE id=$16
+       WHERE id=$18
        RETURNING id`,
       [
         input.nombre, input.descripcion, input.calorias, input.tiempo_preparacion, input.nivel_salud,
         input.protein_g, input.carbs_g, input.fat_g, input.saturated_fat_g, input.sugar_g,
         input.fiber_g, input.sodium_mg, input.serving_size_g, input.servings,
-        input.nutrition_source, id
+        input.nutrition_source, input.nutrition_source_reference, req.user.id, id
       ]
     );
     if (!updateResult.rows[0]) {
@@ -849,6 +886,9 @@ module.exports = {
   listRecipes,
   validateRecipeCatalogTemplate,
   downloadRecipeCatalogTemplate,
+  downloadRecipeNutritionWorklist,
+  previewRecipeNutritionImport,
+  executeRecipeNutritionImport,
   previewRecipeCatalogImport,
   executeRecipeCatalogImport,
   createRecipe,
