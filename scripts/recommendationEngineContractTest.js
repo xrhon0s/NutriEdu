@@ -3,8 +3,19 @@ const {
   buildPerMealTargets,
   estimateDailyEnergy,
   findConstraintConflicts,
+  getRecipeEvaluationChain,
   getRecipeRecommendations
 } = require("../services/recommendationService");
+const { RecommendationFacade } = require("../services/recommendation/recommendationFacade");
+const {
+  RecommendationStrategyCreator,
+  RecommendationStrategyFactory
+} = require("../services/recommendation/strategyFactory");
+const {
+  BalancedRecommendationStrategy,
+  FatLossRecommendationStrategy,
+  MuscleGainRecommendationStrategy
+} = require("../services/recommendation/strategies");
 
 const profile = {
   fecha_nacimiento: "1996-01-15",
@@ -18,6 +29,20 @@ const profile = {
 const conditions = [{ code: "hypertension", risk_level: "high", requires_professional_guidance: true }];
 
 const run = async () => {
+  const strategyFactory = new RecommendationStrategyFactory();
+  assert.throws(() => new RecommendationStrategyCreator().create({ goals: [] }), /factoryMethod/);
+  assert.ok(strategyFactory.create({ goals: [{ code: "gain_muscle", prioridad: 1 }] }) instanceof MuscleGainRecommendationStrategy);
+  assert.ok(strategyFactory.create({ goals: [{ code: "lose_body_fat", prioridad: 1 }] }) instanceof FatLossRecommendationStrategy);
+  assert.ok(strategyFactory.create({ goals: [] }) instanceof BalancedRecommendationStrategy);
+  assert.deepEqual(getRecipeEvaluationChain().getHandlerNames(), [
+    "nutrition_rules",
+    "nutrition_targets",
+    "recipe_quality",
+    "cooking_time",
+    "confidence"
+  ]);
+  assert.equal(typeof RecommendationFacade, "function");
+
   const now = new Date("2026-09-07T12:00:00Z");
   const energy = estimateDailyEnergy(profile, conditions, now);
   assert.equal(energy.source, "nasem_eer_2023");
@@ -63,6 +88,8 @@ const run = async () => {
   assert.equal(result.recipes[0].id, 1);
   assert.ok(result.recipes[0].recommendation.score > result.recipes[1].recommendation.score);
   assert.equal(result.recipes[0].recommendation.confidence, 1);
+  assert.equal(result.recipes[0].recommendation.strategy.code, "gain_muscle");
+  assert.equal(result.profileContext.recommendationStrategy.code, "gain_muscle");
   assert.equal(result.profileContext.clinicalReviewRequired, true);
   assert.ok(result.profileContext.usedFactors.includes("goals_and_priority"));
   assert.ok(result.profileContext.usedFactors.includes("latest_progress_weight"));
@@ -75,7 +102,8 @@ const run = async () => {
     energyEstimateAttributed: true,
     conflictsDetected: true,
     deterministicRanking: true,
-    explainableResults: true
+    explainableResults: true,
+    patternsVerified: ["strategy", "factory_method", "chain_of_responsibility", "facade"]
   }, null, 2));
 };
 

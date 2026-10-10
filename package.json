@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:contracts",
     "test:clinical-smoke": "node scripts/clinicalProfileSmokeTest.js",
     "test:vision-contract": "node scripts/visionProviderContractTest.js",
     "test:vision-usage": "node scripts/visionUsageContractTest.js",
@@ -19,6 +19,7 @@
     "test:admin-catalog-pagination": "node scripts/adminCatalogPaginationContractTest.js",
     "test:recipe-safety": "node scripts/recipeSafetyContractTest.js",
     "test:recommendations": "node scripts/recommendationEngineContractTest.js",
+    "test:recommendations-smoke": "node scripts/recommendationArchitectureSmokeTest.js",
     "test:recipe-template": "node scripts/recipeCatalogTemplateContractTest.js",
     "test:recipe-import": "node scripts/recipeCatalogImportContractTest.js",
     "test:nutrition-worklist": "node scripts/recipeNutritionWorklistContractTest.js",

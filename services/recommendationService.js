@@ -1,3 +1,7 @@
+const { createRecipeEvaluationChain } = require("./recommendation/evaluationChain");
+const { RecommendationFacade } = require("./recommendation/recommendationFacade");
+const { RecommendationStrategyFactory } = require("./recommendation/strategyFactory");
+
 const NUTRIENT_FIELDS = {
   calories: "calorias",
   protein_g: "protein_g",
@@ -192,109 +196,45 @@ const findConstraintConflicts = (rules, perMealTargets) => {
   });
 };
 
-const evaluateRecipe = (recipe, context) => {
-  let score = 100;
-  const reasons = [];
-  const warnings = [];
-  const missingNutrients = new Set();
+let recipeEvaluationChain;
 
-  context.rules.forEach((rule) => {
-    const field = NUTRIENT_FIELDS[rule.nutrient];
-    if (!field) return;
-    const value = toNumber(recipe[field]);
-    if (value === null) {
-      missingNutrients.add(rule.nutrient);
-      return;
-    }
-    if (breaksRule(value, rule)) {
-      const penalty = SEVERITY_PENALTY[rule.severity] || SEVERITY_PENALTY.warning;
-      score -= penalty * sourceMultiplier(rule, context.goals, context.conditions);
-      warnings.push({
-        source: rule.scope_type,
-        sourceCode: rule.scope_code,
-        nutrient: rule.nutrient,
-        severity: rule.severity,
-        message: rule.message,
-        value,
-        minValue: toNumber(rule.min_value),
-        maxValue: toNumber(rule.max_value),
-        unit: rule.unit
-      });
-    } else if (rule.scope_type !== "global" && reasons.length < 4) {
-      reasons.push(`Cumple la regla de ${rule.nutrient} para ${rule.scope_code}.`);
-    }
-  });
-
-  Object.entries(context.targetProfile.perMeal).forEach(([nutrient, target]) => {
-    const value = toNumber(recipe[NUTRIENT_FIELDS[nutrient]]);
-    if (value === null) {
-      missingNutrients.add(nutrient);
-      return;
-    }
-    const below = target.min !== null && value < target.min;
-    const above = target.max !== null && value > target.max;
-    if (below || above) {
-      const boundary = below ? target.min : target.max;
-      const deviation = boundary > 0 ? Math.abs(value - boundary) / boundary : 1;
-      score -= Math.min(18, 6 + (deviation * 12));
-      warnings.push({
-        source: "target",
-        sourceCode: "effective_per_meal_target",
-        nutrient,
-        severity: "warning",
-        message: below ? `Aporte inferior a la referencia por comida de ${nutrient}.` : `Aporte superior a la referencia por comida de ${nutrient}.`,
-        value,
-        minValue: target.min,
-        maxValue: target.max,
-        unit: target.unit
-      });
-    } else if (reasons.length < 4) {
-      reasons.push(`Dentro de tu referencia por comida para ${nutrient}.`);
-    }
-  });
-
-  const healthLevel = Math.min(5, Math.max(1, toNumber(recipe.nivel_salud) || 1));
-  score -= (5 - healthLevel) * 2;
-
-  const maxCookingMinutes = cookingLimit(context.profile);
-  const preparationMinutes = toNumber(recipe.tiempo_preparacion);
-  if (maxCookingMinutes !== null && preparationMinutes !== null) {
-    if (preparationMinutes > maxCookingMinutes) {
-      score -= Math.min(12, 4 + ((preparationMinutes - maxCookingMinutes) / maxCookingMinutes) * 8);
-      warnings.push({
-        source: "preference",
-        sourceCode: "cooking_time",
-        severity: "info",
-        message: `Requiere más tiempo que los ${maxCookingMinutes} minutos indicados en tu perfil.`,
-        value: preparationMinutes,
-        maxValue: maxCookingMinutes,
-        unit: "minutes"
-      });
-    } else {
-      reasons.push("Se ajusta al tiempo que tienes disponible para cocinar.");
-    }
+const getRecipeEvaluationChain = () => {
+  if (!recipeEvaluationChain) {
+    recipeEvaluationChain = createRecipeEvaluationChain({
+      nutrientFields: NUTRIENT_FIELDS,
+      severityPenalty: SEVERITY_PENALTY,
+      toNumber,
+      round,
+      breaksRule,
+      sourceMultiplier,
+      cookingLimit
+    });
   }
+  return recipeEvaluationChain;
+};
 
-  const knownNutrients = Object.values(NUTRIENT_FIELDS)
-    .filter((field) => toNumber(recipe[field]) !== null).length;
-  const confidence = round(knownNutrients / Object.keys(NUTRIENT_FIELDS).length, 2);
-  if (context.effectiveRestrictions.length) reasons.unshift("Compatible con tus restricciones alimentarias efectivas.");
-
-  const boundedScore = Math.max(0, Math.min(100, round(score)));
-  const hasDanger = warnings.some((warning) => warning.severity === "danger");
+const evaluateRecipe = (recipe, context, strategy = new RecommendationStrategyFactory().create(context)) => {
+  const evaluation = getRecipeEvaluationChain().evaluate(recipe, context);
+  strategy.apply(recipe, context, evaluation);
+  const boundedScore = Math.max(0, Math.min(100, round(evaluation.score)));
+  const hasDanger = evaluation.warnings.some((warning) => warning.severity === "danger");
   const status = hasDanger || context.conflicts.length
     ? "review_required"
-    : warnings.length || confidence < 0.5
+    : evaluation.warnings.length || evaluation.confidence < 0.5
       ? "suitable_with_adjustments"
       : "suitable";
 
   return {
     score: boundedScore,
     status,
-    confidence,
-    reasons: [...new Set(reasons)].slice(0, 5),
-    warnings,
-    missingNutrients: [...missingNutrients].sort()
+    confidence: evaluation.confidence,
+    reasons: [...new Set(evaluation.reasons)].slice(0, 5),
+    warnings: evaluation.warnings,
+    missingNutrients: [...evaluation.missingNutrients].sort(),
+    strategy: {
+      code: strategy.code,
+      label: strategy.label
+    }
   };
 };
 
@@ -409,9 +349,8 @@ const loadRecommendationContext = async (pool, userId, now) => {
   return { profile, goals, conditions, rules, targetProfile, effectiveRestrictions, conflicts, latestProgress: progressRes.rows[0] || null };
 };
 
-const getRecipeRecommendations = async (pool, { userId, limit = 6, offset = 0, now = new Date() }) => {
-  const context = await loadRecommendationContext(pool, userId, now);
-  const restrictionIds = context.effectiveRestrictions.map((restriction) => restriction.id);
+const loadEligibleRecipes = async (pool, userId, effectiveRestrictions) => {
+  const restrictionIds = effectiveRestrictions.map((restriction) => restriction.id);
   const recipesRes = await pool.query(
     `SELECT r.*,
        EXISTS (
@@ -435,29 +374,17 @@ const getRecipeRecommendations = async (pool, { userId, limit = 6, offset = 0, n
      GROUP BY r.id`,
     [restrictionIds, userId]
   );
-
-  const ranked = recipesRes.rows
-    .map((recipe) => ({ ...recipe, recommendation: evaluateRecipe(recipe, context) }))
-    .sort((first, second) =>
-      second.recommendation.score - first.recommendation.score
-      || second.recommendation.confidence - first.recommendation.confidence
-      || (toNumber(second.nivel_salud) || 0) - (toNumber(first.nivel_salud) || 0)
-      || (toNumber(first.calorias) || Number.MAX_SAFE_INTEGER) - (toNumber(second.calorias) || Number.MAX_SAFE_INTEGER)
-      || Number(first.id) - Number(second.id));
-  const page = ranked.slice(offset, offset + limit);
-
-  return {
-    recipes: page,
-    pagination: {
-      limit,
-      offset,
-      total: ranked.length,
-      nextOffset: offset + limit < ranked.length ? offset + limit : null,
-      hasMore: offset + limit < ranked.length
-    },
-    profileContext: buildContextSummary(context)
-  };
+  return recipesRes.rows;
 };
+
+const recommendationFacade = new RecommendationFacade({
+  loadContext: loadRecommendationContext,
+  loadRecipes: loadEligibleRecipes,
+  evaluateRecipe,
+  buildContextSummary
+});
+
+const getRecipeRecommendations = (pool, options) => recommendationFacade.getRecommendations(pool, options);
 
 module.exports = {
   ageFromBirthDate,
@@ -465,6 +392,8 @@ module.exports = {
   estimateDailyEnergy,
   evaluateRecipe,
   findConstraintConflicts,
+  getRecipeEvaluationChain,
   getRecipeRecommendations,
+  loadEligibleRecipes,
   loadRecommendationContext
 };
