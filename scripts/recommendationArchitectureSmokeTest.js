@@ -11,13 +11,21 @@ const password = `Smoke-${runId}-Aa1`;
 let userId;
 
 const request = async (path, options = {}) => {
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers
-    }
-  });
+  let response;
+  try {
+    response = await fetch(`${apiUrl}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers
+      }
+    });
+  } catch (error) {
+    throw new Error(
+      `No se pudo conectar con la API en ${apiUrl}. Inicia el backend con "npm run dev" en otra terminal.`,
+      { cause: error }
+    );
+  }
   const body = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(`${options.method || "GET"} ${path} returned ${response.status}: ${JSON.stringify(body)}`);
@@ -25,7 +33,22 @@ const request = async (path, options = {}) => {
   return body;
 };
 
+const assertDatabaseAvailable = async () => {
+  try {
+    await pool.query("SELECT 1");
+  } catch (error) {
+    const target = process.env.DATABASE_URL
+      ? "DATABASE_URL"
+      : `${process.env.DB_HOST || "localhost"}:${process.env.DB_PORT || "5432"}`;
+    throw new Error(
+      `No se pudo conectar con PostgreSQL usando ${target}. Verifica que la base esté encendida y que el archivo .env sea correcto.`,
+      { cause: error }
+    );
+  }
+};
+
 const run = async () => {
+  await assertDatabaseAvailable();
   const passwordHash = await bcrypt.hash(password, 10);
   const userResult = await pool.query(
     `INSERT INTO usuarios (nombre, email, password_hash)

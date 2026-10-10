@@ -291,6 +291,8 @@ Con el backend local encendido y una base de datos de prueba accesible, el recor
 npm run test:recommendations-smoke
 ```
 
+Este smoke test requiere dos terminales. En la primera deja `npm run dev` ejecutándose; en la segunda ejecuta el comando anterior. La API utilizada se obtiene de `SMOKE_API_URL` o, por defecto, de `PORT`; PostgreSQL utiliza la misma configuración `.env` del backend. Si alguna dependencia no está disponible, el test indica cuál servicio debe iniciarse o revisarse.
+
 ### Plantilla de nuevas recetas
 
 `POST /api/admin/recipes/template/validate` valida una receta canónica JSON antes de importarla. Requiere JWT administrativo y devuelve `errors` y `warnings` con ruta exacta, además de cobertura nutricional, `eligibilityReady` y `recommendationReady`. No escribe en la base de datos.
